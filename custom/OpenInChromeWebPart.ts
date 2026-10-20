@@ -31,6 +31,7 @@ export default class OpenInChromeWebPart
 
     const link = document.createElement('a');
     link.href = address;
+    link.setAttribute('data-interception', 'off');
     link.textContent = text || 'Open in Chrome';
     link.style.color = '#0078d4';
     link.style.textDecoration = 'underline';
