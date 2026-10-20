@@ -5,12 +5,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'custom/**'
+      - '.github/workflows/build-spfx.yml'
       - 'OpenInChrome/**'
-      - 'src/**'
-      - 'config/**'
-      - 'sharepoint/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'src/**'
 
 permissions:
   contents: read
@@ -18,7 +17,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -28,41 +27,46 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Locate SPFx project
-        id: project
+      - name: Scaffold SPFx project from Microsoft generator
         shell: bash
         run: |
-          if [[ -f "OpenInChrome/package.json" ]]; then
-            echo "dir=OpenInChrome" >> "$GITHUB_OUTPUT"
-          elif [[ -f "package.json" ]]; then
-            echo "dir=." >> "$GITHUB_OUTPUT"
-          else
-            echo "No SPFx package.json found. Push your Codespaces project first." >&2
-            exit 1
-          fi
+          npm install -g yo @microsoft/generator-sharepoint@1.22.2 @rushstack/heft
+          mkdir -p build-project
+          cd build-project
+          CI=true yo @microsoft/sharepoint \
+            --solution-name open-in-chrome \
+            --component-type webpart \
+            --component-name OpenInChrome \
+            --component-description "Open approved links in Chrome" \
+            --framework none \
+            --environment spo \
+            --package-manager npm \
+            --skip-install \
+            --no-insight
 
-      - name: Install dependencies
-        working-directory: ${{ steps.project.outputs.dir }}
+      - name: Replace web part with configurable protocol hyperlink
+        shell: bash
         run: |
-          if [[ -f package-lock.json ]]; then
-            npm ci
-          else
-            npm install
-          fi
+          find build-project -name 'package.json' -not -path '*/node_modules/*' -print
+          PROJECT="$(find build-project -type f -name 'package.json' -not -path '*/node_modules/*' -printf '%h\n' | head -1)"
+          if [[ -z "$PROJECT" ]]; then echo "SPFx generator did not create package.json"; exit 1; fi
+          TARGET="$(find "$PROJECT/src/webparts" -name '*WebPart.ts' -print -quit)"
+          if [[ -z "$TARGET" ]]; then echo "SPFx web part source missing"; exit 1; fi
+          cp custom/OpenInChromeWebPart.ts "$TARGET"
+          node -e 'const fs=require("fs"); const f=process.argv[1]; const j=JSON.parse(fs.readFileSync(f,"utf8")); j.solution.includeClientSideAssets=true; j.solution.skipFeatureDeployment=false; fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$PROJECT/config/package-solution.json"
+          echo "$PROJECT" > project-directory.txt
 
-      - name: Build SPFx
-        working-directory: ${{ steps.project.outputs.dir }}
-        run: npx heft build --production
+      - name: Install and compile
+        shell: bash
+        run: |
+          cd "$(cat project-directory.txt)"
+          npm install --no-audit --no-fund
+          npx heft build --production
+          npx heft package-solution --production
 
-      - name: Create .sppkg package
-        working-directory: ${{ steps.project.outputs.dir }}
-        run: npx heft package-solution --production
-
-      - name: Upload package
+      - name: Upload .sppkg
         uses: actions/upload-artifact@v4
         with:
           name: OpenInChrome-sppkg
-          path: |
-            OpenInChrome/sharepoint/solution/*.sppkg
-            sharepoint/solution/*.sppkg
+          path: build-project/**/sharepoint/solution/*.sppkg
           if-no-files-found: error
