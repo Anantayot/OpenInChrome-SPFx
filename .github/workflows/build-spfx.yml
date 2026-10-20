@@ -12,7 +12,7 @@ on:
       - 'src/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -70,3 +70,20 @@ jobs:
           name: OpenInChrome-sppkg
           path: build-project/**/sharepoint/solution/*.sppkg
           if-no-files-found: error
+
+      - name: Commit built package to repository
+        shell: bash
+        run: |
+          mkdir -p dist
+          PACKAGE="$(find build-project -type f -path '*/sharepoint/solution/*.sppkg' -print -quit)"
+          test -n "$PACKAGE"
+          cp "$PACKAGE" dist/OpenInChrome.sppkg
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/OpenInChrome.sppkg
+          if ! git diff --cached --quiet; then
+            git commit -m "Store latest built OpenInChrome .sppkg"
+            git push origin HEAD:main
+          else
+            echo "Built package already saved in repository"
+          fi
