@@ -42,7 +42,7 @@ export default class OpenInChromeWebPart
   protected getPropertyPaneConfiguration(): IPropertyPaneConfiguration {
     return {
       pages: [{
-        header: { description: 'Open in Chrome' },
+        header: { description: 'Nasarut-inchrome' },
         groups: [{
           groupName: 'Link settings',
           groupFields: [

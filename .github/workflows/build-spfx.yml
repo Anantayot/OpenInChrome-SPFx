@@ -56,8 +56,8 @@ jobs:
           node -e 'const fs=require("fs"); const f=process.argv[1]; const j=JSON.parse(fs.readFileSync(f,"utf8")); j.solution.includeClientSideAssets=true; j.solution.skipFeatureDeployment=false; fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$PROJECT/config/package-solution.json"
           # Preserve the original .sppkg app/feature/web-part IDs for upgrades.
           # The Microsoft generator otherwise creates fresh IDs on every run.
-          node -e 'const fs=require("fs");const file=process.argv[1];const j=JSON.parse(fs.readFileSync(file,"utf8"));j.solution.id="968f0272-ec25-46a0-a351-6f35299b8d24";j.solution.version="1.0.1.0";if(!Array.isArray(j.solution.features)||!j.solution.features.length)throw Error("Solution features missing");j.solution.features[0].id="920d0ed3-0a19-41e4-9d44-82c40c02cc02";fs.writeFileSync(file,JSON.stringify(j,null,2))' "$PROJECT/config/package-solution.json"
-          node -e 'const fs=require("fs"),path=require("path");const dir=path.dirname(process.argv[1]);const name=fs.readdirSync(dir).find(x=>x.endsWith(".manifest.json"));if(!name)throw Error("Webpart manifest missing");const file=path.join(dir,name);const raw=fs.readFileSync(file,"utf8").split(String.fromCharCode(10)).filter(line=>!line.trim().startsWith("//")).map(line=>{const n=line.indexOf(" //");return n<0?line:line.slice(0,n)}).join(String.fromCharCode(10));const j=JSON.parse(raw);j.id="73c11d0c-7e55-4775-9239-79164c999041";fs.writeFileSync(file,JSON.stringify(j,null,2))' "$TARGET"
+          node -e 'const fs=require("fs");const file=process.argv[1];const j=JSON.parse(fs.readFileSync(file,"utf8"));j.solution.id="968f0272-ec25-46a0-a351-6f35299b8d24";j.solution.version="1.0.2.0";j.solution.name="Nasarut-inchrome";if(!Array.isArray(j.solution.features)||!j.solution.features.length)throw Error("Solution features missing");j.solution.features[0].id="920d0ed3-0a19-41e4-9d44-82c40c02cc02";fs.writeFileSync(file,JSON.stringify(j,null,2))' "$PROJECT/config/package-solution.json"
+          node -e 'const fs=require("fs"),path=require("path");const dir=path.dirname(process.argv[1]);const name=fs.readdirSync(dir).find(x=>x.endsWith(".manifest.json"));if(!name)throw Error("Webpart manifest missing");const file=path.join(dir,name);const raw=fs.readFileSync(file,"utf8").split(String.fromCharCode(10)).filter(line=>!line.trim().startsWith("//")).map(line=>{const n=line.indexOf(" //");return n<0?line:line.slice(0,n)}).join(String.fromCharCode(10));const j=JSON.parse(raw);j.id="73c11d0c-7e55-4775-9239-79164c999041";if(!j.preconfiguredEntries || !j.preconfiguredEntries.length)throw Error("No preconfigured entries");j.preconfiguredEntries[0].title={default:"Nasarut-inchrome"};j.preconfiguredEntries[0].description={default:"Open approved links in Google Chrome"};fs.writeFileSync(file,JSON.stringify(j,null,2))' "$TARGET"
           echo "$PROJECT" > project-directory.txt
 
       - name: Install and compile
@@ -71,7 +71,7 @@ jobs:
       - name: Upload .sppkg
         uses: actions/upload-artifact@v4
         with:
-          name: OpenInChrome-sppkg
+          name: Nasarut-inchrome-sppkg
           path: build-project/**/sharepoint/solution/*.sppkg
           if-no-files-found: error
 
@@ -81,12 +81,13 @@ jobs:
           mkdir -p dist
           PACKAGE="$(find build-project -type f -path '*/sharepoint/solution/*.sppkg' -print -quit)"
           test -n "$PACKAGE"
-          cp "$PACKAGE" dist/OpenInChrome.sppkg
+          cp "$PACKAGE" dist/Nasarut-inchrome.sppkg
+          git rm -f dist/OpenInChrome.sppkg || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/OpenInChrome.sppkg
+          git add dist/Nasarut-inchrome.sppkg
           if ! git diff --cached --quiet; then
-            git commit -m "Store latest built OpenInChrome .sppkg"
+            git commit -m "Store latest built Nasarut-inchrome .sppkg"
             git push origin HEAD:main
           else
             echo "Built package already saved in repository"
