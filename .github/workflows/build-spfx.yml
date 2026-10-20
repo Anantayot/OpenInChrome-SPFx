@@ -1,0 +1,68 @@
+name: Build SharePoint SPFx package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'OpenInChrome/**'
+      - 'src/**'
+      - 'config/**'
+      - 'sharepoint/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Locate SPFx project
+        id: project
+        shell: bash
+        run: |
+          if [[ -f "OpenInChrome/package.json" ]]; then
+            echo "dir=OpenInChrome" >> "$GITHUB_OUTPUT"
+          elif [[ -f "package.json" ]]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          else
+            echo "No SPFx package.json found. Push your Codespaces project first." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build SPFx
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: npx heft build --production
+
+      - name: Create .sppkg package
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: npx heft package-solution --production
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenInChrome-sppkg
+          path: |
+            OpenInChrome/sharepoint/solution/*.sppkg
+            sharepoint/solution/*.sppkg
+          if-no-files-found: error
