@@ -19,6 +19,7 @@ import {
   StyledBulletList, StyledOrderedList, TextLang
 } from './extensions';
 import { openColorDialog } from './ColorDialog';
+import { normalizePastedHtml } from './paste';
 import { buildHref, isAllowedHref, isChromeHref, isSafeImageSrc, stripChrome } from './links';
 import { sanitizeHtml } from './sanitize';
 import { ensureStyles } from './styles';
@@ -181,9 +182,9 @@ export class RichTextEditor {
   private changeTimer: number | undefined;
   private painterMarks: IMarkSnapshot[] | undefined;
   private resizeObserver: ResizeObserver | undefined;
-  private placementChecked: boolean = false;
   private blurTimer: number | undefined;
   private closeDialog: (() => void) | undefined;
+  private selectTimer: number | undefined;
   private painting: boolean = false;
   private readonly onDocMouseDown = (e: MouseEvent): void => {
     const t = e.target as Element;
@@ -235,7 +236,7 @@ export class RichTextEditor {
       element: body,
       content: sanitizeHtml(options.html),
       editorProps: {
-        transformPastedHTML: (html: string) => liftLinkStyles(html)
+        transformPastedHTML: (html: string) => normalizePastedHtml(liftLinkStyles(html), doc, options.themeColors)
       },
       extensions: [
         StarterKit.configure({ heading: { levels: [1, 2, 3, 4] }, bulletList: false, orderedList: false, blockquote: false }),
@@ -243,7 +244,8 @@ export class RichTextEditor {
         StyledOrderedList,
         StyledBlockquote,
         Underline,
-        TextStyle,
+        // Nested <span style> (colour outside, size inside) keep both styles.
+        TextStyle.configure({ mergeNestedSpanStyles: true }),
         Color,
         FontSize,
         ParagraphFormat,
@@ -290,6 +292,7 @@ export class RichTextEditor {
     this.closePopover();
     if (this.closeDialog) { this.closeDialog(); }
     window.clearTimeout(this.blurTimer);
+    window.clearInterval(this.selectTimer);
     if (this.resizeObserver) { this.resizeObserver.disconnect(); }
     this.root.ownerDocument.removeEventListener('mousedown', this.onDocMouseDown, true);
     this.editor.destroy();
@@ -312,15 +315,13 @@ export class RichTextEditor {
   /**
    * Like the SharePoint Text web part, the toolbar sits above the web part frame,
    * right after SharePoint's own web part toolbar (drag, settings, duplicate, delete),
-   * and may extend past the column. It shows while the web part is focused or hovered.
-   * If something on the page hides the area above the web part, it moves inside the frame.
+   * and may extend past the column. It shows whenever SharePoint shows its toolbar for
+   * this web part (web part selected), and while the text is focused or hovered.
+   * Only if the page really clips the area above the web part does it move inside the frame.
    */
   private setupToolbarPlacement(): void {
     this.root.classList.add('oict-float');
-    const show = (): void => {
-      this.positionToolbar();
-      this.checkToolbarVisible();
-    };
+    const show = (): void => this.placeToolbar();
     this.root.addEventListener('focusin', () => {
       window.clearTimeout(this.blurTimer);
       this.root.classList.add('is-focused');
@@ -329,10 +330,18 @@ export class RichTextEditor {
     this.root.addEventListener('focusout', () => this.syncFocusState());
     this.root.addEventListener('mouseenter', show);
     if (typeof ResizeObserver !== 'undefined') {
-      this.resizeObserver = new ResizeObserver(() => this.positionToolbar());
+      this.resizeObserver = new ResizeObserver(() => this.placeToolbar());
       this.resizeObserver.observe(this.root);
     }
-    this.positionToolbar();
+    // Follow SharePoint's web part selection: its toolbar appears and disappears with it.
+    this.selectTimer = window.setInterval(() => {
+      const selected = !!this.findSharePointToolbar();
+      if (selected !== this.root.classList.contains('is-selected')) {
+        this.root.classList.toggle('is-selected', selected);
+        if (selected) { this.placeToolbar(); }
+      }
+    }, 300);
+    this.placeToolbar();
   }
 
   /** Hides the floating toolbar once focus has really left the web part (menus and dialogs count as inside). */
@@ -350,43 +359,55 @@ export class RichTextEditor {
   /** Width SharePoint's web part toolbar usually takes when it cannot be found on the page. */
   private static readonly SP_TOOLBAR_FALLBACK: number = 160;
 
-  /** Starts our toolbar just right of SharePoint's web part toolbar when it can be found. */
-  private positionToolbar(): void {
-    if (this.root.classList.contains('oict-inside')) { return; }
+  /** SharePoint's visible web part toolbar for this web part, if any (it sits just above the frame, left-aligned). */
+  private findSharePointToolbar(): Element | undefined {
     const rootBox = this.root.getBoundingClientRect();
-    let left = RichTextEditor.SP_TOOLBAR_FALLBACK;
+    if (!rootBox.width) { return undefined; }
     const bars = Array.from(this.root.ownerDocument.querySelectorAll('[role="toolbar"]'));
     for (const bar of bars) {
       if (bar === this.toolbar || this.root.contains(bar)) { continue; }
       const b = bar.getBoundingClientRect();
+      if (!b.width || !b.height) { continue; }
       const above = b.bottom <= rootBox.top + 4 && b.bottom >= rootBox.top - 70;
       const alignedLeft = Math.abs(b.left - rootBox.left) < 60;
-      if (b.width > 0 && above && alignedLeft) {
-        left = Math.max(0, b.right - rootBox.left + 6);
-        break;
-      }
+      if (!above || !alignedLeft) { continue; }
+      const cs = window.getComputedStyle(bar);
+      if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) === 0) { continue; }
+      return bar;
     }
-    // Not enough room to the right inside the window: use a second row above SharePoint's toolbar.
+    return undefined;
+  }
+
+  /** True when an ancestor with overflow clipping cuts off the area above the web part. */
+  private isAreaAboveClipped(): boolean {
+    const rootBox = this.root.getBoundingClientRect();
+    const top = rootBox.top - 50;
+    let el = this.root.parentElement;
+    while (el && el !== this.root.ownerDocument.body) {
+      const cs = window.getComputedStyle(el);
+      if (/(hidden|clip|auto|scroll)/.test(cs.overflowY + cs.overflow) && el.getBoundingClientRect().top > top) {
+        return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  }
+
+  /** Starts our toolbar just right of SharePoint's toolbar; second row if no room; inside only when clipped. */
+  private placeToolbar(): void {
+    const inside = this.isAreaAboveClipped();
+    this.root.classList.toggle('oict-inside', inside);
+    if (inside) {
+      this.root.classList.remove('oict-stack');
+      this.toolbar.style.left = '';
+      return;
+    }
+    const rootBox = this.root.getBoundingClientRect();
+    const bar = this.findSharePointToolbar();
+    const left = bar ? Math.max(0, bar.getBoundingClientRect().right - rootBox.left + 6) : RichTextEditor.SP_TOOLBAR_FALLBACK;
     const stack = rootBox.left + left + this.toolbar.offsetWidth > window.innerWidth - 8;
     this.root.classList.toggle('oict-stack', stack);
     this.toolbar.style.left = stack ? '0px' : `${Math.round(left)}px`;
-  }
-
-  /** Once, shortly after first shown: if the floating toolbar is hidden by the page, keep it inside the frame. */
-  private checkToolbarVisible(): void {
-    if (this.placementChecked) { return; }
-    window.setTimeout(() => {
-      const box = this.toolbar.getBoundingClientRect();
-      if (!box.width || this.placementChecked) { return; }
-      this.placementChecked = true;
-      const x = box.left + Math.min(20, box.width / 2);
-      const y = box.top + box.height / 2;
-      const hit = y > 0 ? this.root.ownerDocument.elementFromPoint(x, y) : undefined;
-      if (!hit || !this.toolbar.contains(hit)) {
-        this.root.classList.add('oict-inside');
-        this.toolbar.style.left = '';
-      }
-    }, 150);
   }
 
   private toolButton(cls: string, title: string, html: string, run: (b: HTMLButtonElement) => void): HTMLButtonElement {

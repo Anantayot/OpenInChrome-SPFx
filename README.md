@@ -13,7 +13,7 @@ SPFx web part สำหรับ SharePoint Online ที่แก้ข้อ�
 | ชื่อ web part ในหน้าเพจ | Nasarut-inchrome (กลุ่ม Advanced) |
 | Solution ID | `968f0272-ec25-46a0-a351-6f35299b8d24` |
 | Web part ID | `212a363a-17f4-4bde-98e0-3e855aa31402` |
-| Version | `1.2.1.0` |
+| Version | `1.2.2.0` |
 
 ## โครงสร้าง repo
 
