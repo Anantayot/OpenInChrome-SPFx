@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "open-in-chrome-text-client-side-solution",
+    "id": "85c40296-c6c5-4c19-894a-cddf803fbcb2",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": false,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.22.2"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "Text web part with optional open-in-Chrome links"
+      },
+      "longDescription": {
+        "default": "Rich text web part. Links can be set to open through the nasarut-inchrome-chrome: protocol."
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "open-in-chrome-text Feature",
+        "description": "The feature that activates elements of the open-in-chrome-text solution.",
+        "id": "4d61b687-cfa6-4f50-ba21-10bccabfc321",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/open-in-chrome-text.sppkg"
+  }
+}

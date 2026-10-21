@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "open-in-chrome-text-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/openInChromeText/OpenInChromeTextWebPart.js",
+          "manifest": "./src/webparts/openInChromeText/OpenInChromeTextWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "OpenInChromeTextWebPartStrings": "lib/webparts/openInChromeText/loc/{locale}.js"
+  }
+}
