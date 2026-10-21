@@ -11,13 +11,14 @@ SPFx web part สำหรับ SharePoint Online ที่แก้ข้อ�
 | ชื่อ web part ในหน้าเพจ | Nasarut-inchrome (กลุ่ม Advanced) |
 | Solution ID | `968f0272-ec25-46a0-a351-6f35299b8d24` |
 | Web part ID | `212a363a-17f4-4bde-98e0-3e855aa31402` |
-| Version | `1.1.0.0` |
+| Version | `1.1.1.0` |
 
 ## โครงสร้าง repo
 
 ```
 nasarut-inchrome/                       โค้ด SPFx 1.22.2 (Node.js 22)
   config/package-solution.json          ชื่อ, ID และ version ของแพ็กเกจ
+  sharepoint/images/nasarut-inchrome.png   ไอคอน App Catalog (96×96)
   src/webparts/nasarutInchrome/
     NasarutInchromeWebPart.ts           web part: โหมดแก้ไขเปิดตัวแก้ไข โหมดดูแสดง HTML ที่กรองแล้ว
     editor/RichTextEditor.ts            แถบเครื่องมือ ตัวแก้ไข และหน้าต่างใส่ลิงก์
@@ -38,7 +39,7 @@ dist/Nasarut-inchrome.sppkg             ไฟล์สำหรับอัป�
 ## แก้ไขโค้ด
 
 1. แก้ไฟล์ใน `nasarut-inchrome/`
-2. เพิ่ม `version` ใน `config/package-solution.json` ทุกครั้ง (เช่น 1.1.0.0 → 1.1.1.0)
+2. เพิ่ม `version` ใน `config/package-solution.json` ทุกครั้ง (เช่น 1.1.1.0 → 1.1.2.0)
 3. push ขึ้น main แล้ว workflow จะ build และ commit `dist/Nasarut-inchrome.sppkg` ให้เอง
 4. อัปโหลดทับใน App Catalog (**Replace**)
 
