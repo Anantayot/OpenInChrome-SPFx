@@ -23,6 +23,7 @@ import { normalizePastedHtml } from './paste';
 import { buildHref, isAllowedHref, isChromeHref, isSafeImageSrc, stripChrome } from './links';
 import { sanitizeHtml } from './sanitize';
 import { ensureStyles } from './styles';
+import { adoptTextTypographySoon } from './typography';
 
 /** A page shown in the Insert link dialog. */
 export interface ISitePage {
@@ -214,6 +215,7 @@ export class RichTextEditor {
 
   constructor(host: HTMLElement, options: IRichTextEditorOptions) {
     ensureStyles(host.ownerDocument);
+    adoptTextTypographySoon(host.ownerDocument);
     this.options = options;
 
     const doc = host.ownerDocument;
@@ -333,7 +335,6 @@ export class RichTextEditor {
    * It is drawn on the page's top layer (attached to <body>, position: fixed) so nothing on the page
    * - other columns, section outlines - can paint over it. While editing, when the page is scrolled
    * so it would go off the top, it sticks to the top of the visible area like the Text toolbar.
-   * Only if the page really clips the area above the web part does it move inside the frame.
    */
   private setupToolbarPlacement(): void {
     this.root.classList.add('oict-float');
@@ -517,24 +518,6 @@ export class RichTextEditor {
     return undefined;
   }
 
-  /**
-   * True when an ancestor with overflow clipping cuts off the area above the web part.
-   * Measured in the ancestor's content coordinates, so simply scrolling the page down does not count.
-   */
-  private isAreaAboveClipped(): boolean {
-    const rootTop = this.root.getBoundingClientRect().top;
-    let el = this.root.parentElement;
-    while (el && el !== this.root.ownerDocument.body) {
-      const cs = window.getComputedStyle(el);
-      if (/(hidden|clip|auto|scroll)/.test(cs.overflowY + cs.overflow) &&
-          rootTop - el.getBoundingClientRect().top + el.scrollTop < 50) {
-        return true;
-      }
-      el = el.parentElement;
-    }
-    return false;
-  }
-
   /** Top of the visible page area (below SharePoint's command bar when the canvas scrolls in its own region). */
   private visibleTop(): number {
     let el = this.root.parentElement;
@@ -548,19 +531,13 @@ export class RichTextEditor {
     return 0;
   }
 
-  /** Puts the toolbar inside the web part (true) or on the page's top layer (false). */
-  private mountToolbar(inside: boolean): void {
-    const inBody = this.toolbar.parentNode === this.root.ownerDocument.body;
-    if (inside && inBody) {
-      this.toolbar.classList.remove('oict-layer-tb', 'oict-shown', 'oict-stuck');
-      if (this.toolbarHome && this.toolbarHome.parentNode) {
-        this.toolbarHome.parentNode.insertBefore(this.toolbar, this.toolbarHome.nextSibling);
-      } else {
-        this.root.insertBefore(this.toolbar, this.root.firstChild);
-      }
-      const t = this.toolbar.style;
-      t.left = ''; t.top = ''; t.height = '';
-    } else if (!inside && !inBody) {
+  /**
+   * The toolbar always lives on the page's top layer (attached to <body>, position: fixed), so no
+   * column, section outline or clipping container can cover or cut it, and it is never drawn inside
+   * the text area.
+   */
+  private mountToolbar(): void {
+    if (this.toolbar.parentNode !== this.root.ownerDocument.body) {
       this.toolbar.classList.add('oict-layer-tb');
       this.root.ownerDocument.body.appendChild(this.toolbar);
     }
@@ -578,15 +555,7 @@ export class RichTextEditor {
   /** Positions the toolbar (viewport coordinates) next to SharePoint's toolbar, stuck at the top while editing. */
   private placeToolbar(spBar?: Element): void {
     if (!this.root.isConnected) { return; }
-    const inside = this.isAreaAboveClipped();
-    this.root.classList.toggle('oict-inside', inside);
-    this.mountToolbar(inside);
-    if (inside) {
-      this.root.classList.remove('oict-stack');
-      this.offscreen = false;
-      this.refreshShown();
-      return;
-    }
+    this.mountToolbar();
     const rootBox = this.root.getBoundingClientRect();
     const width = this.toolbar.offsetWidth;
     const h = this.toolbar.offsetHeight || 40;
@@ -1618,6 +1587,7 @@ export class RichTextEditor {
 /** Read view used when the page is not in edit mode. */
 export function renderView(host: HTMLElement, html: string): void {
   ensureStyles(host.ownerDocument);
+  adoptTextTypographySoon(host.ownerDocument);
   const view = host.ownerDocument.createElement('div');
   view.className = 'oict oict-content';
   view.innerHTML = sanitizeHtml(html);

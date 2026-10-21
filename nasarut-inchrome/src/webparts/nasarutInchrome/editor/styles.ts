@@ -1,14 +1,16 @@
 /** Styles for the editor and the read view. Injected once per page. */
 const CSS: string = `
 .oict{font:inherit;color:inherit;position:relative;word-wrap:break-word}
-.oict-content p{margin:0 0 .6em}
-.oict-content h1{font-size:28px;font-weight:600;margin:.4em 0 .3em;line-height:1.25}
-.oict-content h2{font-size:24px;font-weight:600;margin:.4em 0 .3em;line-height:1.25}
-.oict-content h3{font-size:20px;font-weight:600;margin:.4em 0 .3em;line-height:1.3}
-.oict-content h4{font-size:16px;font-weight:600;margin:.4em 0 .3em;line-height:1.3}
+.oict-content{font-family:var(--oict-font,inherit);font-size:var(--oict-size,inherit)}
+.oict-content p{margin:0 0 .6em;font-family:var(--oict-p-font,inherit);font-size:var(--oict-p-size,inherit);font-weight:var(--oict-p-weight,inherit)}
+.oict-content h1{font-family:var(--oict-h1-font,inherit);font-size:var(--oict-h1-size,28px);font-weight:var(--oict-h1-weight,600);margin:.4em 0 .3em;line-height:1.25}
+.oict-content h2{font-family:var(--oict-h2-font,inherit);font-size:var(--oict-h2-size,24px);font-weight:var(--oict-h2-weight,600);margin:.4em 0 .3em;line-height:1.25}
+.oict-content h3{font-family:var(--oict-h3-font,inherit);font-size:var(--oict-h3-size,20px);font-weight:var(--oict-h3-weight,600);margin:.4em 0 .3em;line-height:1.3}
+.oict-content h4{font-family:var(--oict-h4-font,inherit);font-size:var(--oict-h4-size,16px);font-weight:var(--oict-h4-weight,600);margin:.4em 0 .3em;line-height:1.3}
 .oict-content ul,.oict-content ol{margin:0 0 .6em;padding-left:1.6em}
-.oict-content li{margin:.15em 0 .45em}
-.oict-content li>p{margin:0}
+.oict-content li{margin:.15em 0}
+.oict-content li>p{margin:0;line-height:var(--oict-li-line,21px)}
+.oict-content li>p [style*="font-size"]{line-height:1.3}
 .oict-content blockquote{margin:.4em 0;padding:.2em 0 .2em 1em;border-left:3px solid #c8c6c4;color:#605e5c;font-style:italic}
 .oict-content pre{font-family:Consolas,Menlo,monospace;background:#f3f2f1;padding:8px 10px;border-radius:4px;white-space:pre-wrap}
 .oict-content code{font-family:Consolas,Menlo,monospace}
@@ -34,10 +36,10 @@ const CSS: string = `
 .oict-content mark{padding:0 1px}
 .oict-toolbar{display:flex;align-items:center;gap:2px;padding:3px;border:1px solid #e1dfdd;border-radius:4px;background:#fff;position:sticky;top:0;z-index:3;width:max-content;max-width:100%;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .oict-float .oict-toolbar{visibility:hidden;opacity:0;transition:opacity .12s ease}
-.oict-float:not(.oict-joined):hover .oict-toolbar,.oict-float.is-focused .oict-toolbar,.oict-float.is-selected .oict-toolbar,.oict-float.has-popover .oict-toolbar,.oict-float.oict-inside .oict-toolbar{visibility:visible;opacity:1}
-.oict-float:not(.oict-inside) .oict-toolbar{position:absolute;z-index:20;top:auto;right:auto;bottom:calc(100% + 8px);max-width:none;box-shadow:0 2px 8px rgba(0,0,0,.12)}
-.oict-float:not(.oict-inside) .ProseMirror{margin-top:0}
-.oict-float.oict-stack:not(.oict-inside) .oict-toolbar{bottom:calc(100% + 56px)}
+.oict-float:not(.oict-joined):hover .oict-toolbar,.oict-float.is-focused .oict-toolbar,.oict-float.is-selected .oict-toolbar,.oict-float.has-popover .oict-toolbar{visibility:visible;opacity:1}
+.oict-float .oict-toolbar{position:absolute;z-index:20;top:auto;right:auto;bottom:calc(100% + 8px);max-width:none;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.oict-float .ProseMirror{margin-top:0}
+.oict-float.oict-stack .oict-toolbar{bottom:calc(100% + 56px)}
 .oict-float.oict-joined .oict-toolbar{transition:none}
 .oict-toolbar.oict-layer-tb{position:fixed !important;bottom:auto !important;right:auto !important;z-index:999980;visibility:hidden;opacity:0;transition:none;max-width:none;font-family:"Segoe UI","Leelawadee UI",Tahoma,sans-serif;font-size:14px;line-height:1.3;color:#323130;text-align:left;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .oict-toolbar.oict-layer-tb.oict-shown{visibility:visible;opacity:1}
