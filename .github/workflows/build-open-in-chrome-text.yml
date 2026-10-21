@@ -1,0 +1,65 @@
+name: Build Text (Open in Chrome) web part
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'open-in-chrome-text/**'
+      - '.github/workflows/build-open-in-chrome-text.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-open-in-chrome-text
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: open-in-chrome-text
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: open-in-chrome-text/package-lock.json
+
+      - name: Install exact dependencies from package-lock.json
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npx heft build --clean --production
+
+      - name: Package solution
+        run: npx heft package-solution --production
+
+      - name: Upload .sppkg
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenInChromeText-sppkg
+          path: open-in-chrome-text/sharepoint/solution/open-in-chrome-text.sppkg
+          if-no-files-found: error
+
+      - name: Commit built package to dist/
+        working-directory: .
+        run: |
+          mkdir -p dist
+          cp open-in-chrome-text/sharepoint/solution/open-in-chrome-text.sppkg dist/OpenInChromeText.sppkg
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/OpenInChromeText.sppkg
+          if ! git diff --cached --quiet; then
+            git commit -m "Build OpenInChromeText.sppkg"
+            git push origin HEAD:main
+          else
+            echo "Package unchanged"
+          fi
