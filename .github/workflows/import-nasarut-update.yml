@@ -1,0 +1,154 @@
+name: Import Nasarut-inchrome 1.2.0.0 update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Nasarut-inchrome-repo(2).zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-nasarut-inchrome
+  cancel-in-progress: false
+
+jobs:
+  import-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Import validated update ZIP
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          from zipfile import ZipFile
+          import json
+          import stat
+
+          archive = Path('Nasarut-inchrome-repo(2).zip')
+          if not archive.is_file():
+              raise SystemExit('Please upload Nasarut-inchrome-repo(2).zip to the repository root first')
+
+          required = {
+              'nasarut-inchrome/package.json',
+              'nasarut-inchrome/package-lock.json',
+              'nasarut-inchrome/config/package-solution.json',
+              'nasarut-inchrome/src/webparts/nasarutInchrome/NasarutInchromeWebPart.manifest.json',
+              'nasarut-inchrome/src/webparts/nasarutInchrome/editor/RichTextEditor.ts',
+              'README.md'
+          }
+          with ZipFile(archive) as z:
+              entries = [info for info in z.infolist() if not info.is_dir()]
+              names = [info.filename for info in entries]
+              if len(names) != len(set(names)):
+                  raise SystemExit('Archive contains duplicate file paths')
+              missing = required - set(names)
+              if missing:
+                  raise SystemExit('Missing files: ' + repr(sorted(missing)))
+              for info in entries:
+                  path = PurePosixPath(info.filename)
+                  if (path.is_absolute() or '..' in path.parts or '\\' in info.filename
+                      or path.parts[0] not in ('nasarut-inchrome', 'dist', '.github')
+                      and info.filename != 'README.md'):
+                      raise SystemExit('Unsafe archive path: ' + info.filename)
+                  if stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK:
+                      raise SystemExit('Symlinks are not permitted: ' + info.filename)
+
+              package = json.loads(z.read('nasarut-inchrome/config/package-solution.json'))
+              manifest = json.loads(z.read('nasarut-inchrome/src/webparts/nasarutInchrome/NasarutInchromeWebPart.manifest.json'))
+              solution = package['solution']
+              if (solution['version'] != '1.2.0.0' or
+                  solution['id'].lower() != '968f0272-ec25-46a0-a351-6f35299b8d24' or
+                  solution['features'][0]['id'].lower() != '920d0ed3-0a19-41e4-9d44-82c40c02cc02' or
+                  manifest['id'].lower() != '212a363a-17f4-4bde-98e0-3e855aa31402'):
+                  raise SystemExit('Unexpected version or app/feature/web-part ID')
+
+              for info in entries:
+                  file_path = info.filename
+                  if file_path != 'README.md' and not file_path.startswith('nasarut-inchrome/'):
+                      continue  # Do not import bundled .sppkg or override GitHub workflows
+                  dest = Path(file_path)
+                  dest.parent.mkdir(parents=True, exist_ok=True)
+                  dest.write_bytes(z.read(info.filename))
+
+          # Retain the project's existing version-history link.
+          readme = Path('README.md')
+          body = readme.read_text(encoding='utf-8')
+          changelog_link = '[ดูประวัติการเปลี่ยนแปลงแต่ละเวอร์ชัน (Changelog)](CHANGELOG.md)'
+          if changelog_link not in body:
+              body = body.replace('# Nasarut-inchrome\n', '# Nasarut-inchrome\n\n' + changelog_link + '\n', 1)
+          readme.write_text(body, encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md')
+          history = changelog.read_text(encoding='utf-8')
+          entry = '''## 1.2.0.0 — 21 ตุลาคม 2026
+
+          **เพิ่มเครื่องมือจัดรูปแบบข้อความขั้นสูงใน Rich Text Editor**
+
+          - เพิ่มเมนูรูปแบบข้อความ หัวข้อ คำพูด และเครื่องมือจัดรูปแบบจำนวนมาก
+          - เพิ่มการเลือกสีตัวอักษรและไฮไลต์ รวมถึงสีธีมของ SharePoint และการกำหนดสีเอง
+          - เพิ่มรายการสัญลักษณ์ รายการลำดับเลข การเยื้อง และการปรับระยะห่างบรรทัดหรือย่อหน้า
+          - เพิ่มการแทรกรูปภาพและตาราง พร้อมการจัดรูปแบบที่เกี่ยวข้อง
+          - ปรับการตรวจสอบลิงก์ รูปภาพ และการกรอง HTML/CSS ก่อนบันทึกหรือแสดงผล
+          - เพิ่มตัวเลือกเปิดลิงก์ในแท็บใหม่ โดยยังคงตัวเลือกเปิดด้วย Chrome ผ่าน custom protocol
+          - คง Solution ID, Feature ID และ Web Part ID ของรุ่น 1.1.1.0
+
+          **แหล่งที่มา:** `Nasarut-inchrome-repo(2).zip` ที่อัปโหลดสำหรับเวอร์ชันนี้
+
+          '''
+          if '## 1.2.0.0' not in history:
+              if '## 1.1.1.0' not in history:
+                  raise SystemExit('Cannot find previous version entry')
+              history = history.replace('## 1.1.1.0', entry + '## 1.1.1.0', 1)
+              changelog.write_text(history, encoding='utf-8')
+          print('Validated and imported Nasarut-inchrome v1.2.0.0')
+          PY
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: nasarut-inchrome/package-lock.json
+
+      - name: Install locked dependencies
+        working-directory: nasarut-inchrome
+        run: npm ci --no-audit --no-fund
+
+      - name: Build SPFx
+        working-directory: nasarut-inchrome
+        run: npx heft build --clean --production
+
+      - name: Package SharePoint app
+        working-directory: nasarut-inchrome
+        run: npx heft package-solution --production
+
+      - name: Upload built package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nasarut-inchrome-v1.2.0.0
+          path: nasarut-inchrome/sharepoint/solution/nasarut-inchrome.sppkg
+          if-no-files-found: error
+
+      - name: Save source and new package to GitHub
+        shell: bash
+        run: |
+          cp nasarut-inchrome/sharepoint/solution/nasarut-inchrome.sppkg dist/Nasarut-inchrome.sppkg
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A nasarut-inchrome README.md CHANGELOG.md
+          git add -f dist/Nasarut-inchrome.sppkg
+          git rm -f -- 'Nasarut-inchrome-repo(2).zip'
+          if git diff --cached --quiet; then
+            echo "Everything is already up to date"
+            exit 0
+          fi
+          git commit -m "Upgrade Nasarut-inchrome to 1.2.0.0 from supplied ZIP"
+          git pull --rebase origin main
+          git push origin HEAD:main
