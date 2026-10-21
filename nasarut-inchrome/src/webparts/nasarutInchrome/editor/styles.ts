@@ -34,10 +34,11 @@ const CSS: string = `
 .oict-content mark{padding:0 1px}
 .oict-toolbar{display:flex;align-items:center;gap:2px;padding:3px;border:1px solid #e1dfdd;border-radius:4px;background:#fff;position:sticky;top:0;z-index:3;width:max-content;max-width:100%;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .oict-float .oict-toolbar{visibility:hidden;opacity:0;transition:opacity .12s ease}
-.oict-float:hover .oict-toolbar,.oict-float.is-focused .oict-toolbar,.oict-float.is-selected .oict-toolbar,.oict-float.has-popover .oict-toolbar,.oict-float.oict-inside .oict-toolbar{visibility:visible;opacity:1}
+.oict-float:not(.oict-joined):hover .oict-toolbar,.oict-float.is-focused .oict-toolbar,.oict-float.is-selected .oict-toolbar,.oict-float.has-popover .oict-toolbar,.oict-float.oict-inside .oict-toolbar{visibility:visible;opacity:1}
 .oict-float:not(.oict-inside) .oict-toolbar{position:absolute;z-index:20;top:auto;right:auto;bottom:calc(100% + 8px);max-width:none;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .oict-float:not(.oict-inside) .ProseMirror{margin-top:0}
 .oict-float.oict-stack:not(.oict-inside) .oict-toolbar{bottom:calc(100% + 56px)}
+.oict-float.oict-joined .oict-toolbar{transition:none}
 @media (prefers-reduced-motion:reduce){.oict-float .oict-toolbar{transition:none}}
 .oict-btn,.oict-drop{height:32px;display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;border-radius:3px;background:transparent;color:#323130;cursor:pointer;font:inherit;font-size:14px;padding:0 6px;white-space:nowrap}
 .oict-btn{width:32px;padding:0}
@@ -82,7 +83,9 @@ const CSS: string = `
 .oict-split-arrow:hover{background:#edebe9}
 .oict-split-arrow svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .oict-split-arrow:focus-visible{outline:2px solid #0078d4;outline-offset:-2px}
-.oict-flyout{z-index:31;max-height:min(70vh,520px);overflow-y:auto}
+.oict-layer{position:fixed !important;z-index:999990;font-family:"Segoe UI","Leelawadee UI",Tahoma,sans-serif;color:#323130;font-size:14px;line-height:1.3;text-align:left}
+.oict-layer.oict-flyout{z-index:999991}
+.oict-flyout{max-height:min(70vh,520px);overflow-y:auto}
 .oict-flyout .oict-menu{max-height:none;overflow:visible}
 .oict-lang{min-width:200px}
 .oict-start-row{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 30px;font-size:13px;color:#323130}

@@ -292,7 +292,7 @@ export class RichTextEditor {
     this.closePopover();
     if (this.closeDialog) { this.closeDialog(); }
     window.clearTimeout(this.blurTimer);
-    window.clearInterval(this.selectTimer);
+    this.stopSync();
     if (this.resizeObserver) { this.resizeObserver.disconnect(); }
     this.root.ownerDocument.removeEventListener('mousedown', this.onDocMouseDown, true);
     this.editor.destroy();
@@ -333,15 +333,91 @@ export class RichTextEditor {
       this.resizeObserver = new ResizeObserver(() => this.placeToolbar());
       this.resizeObserver.observe(this.root);
     }
-    // Follow SharePoint's web part selection: its toolbar appears and disappears with it.
-    this.selectTimer = window.setInterval(() => {
-      const selected = !!this.findSharePointToolbar();
-      if (selected !== this.root.classList.contains('is-selected')) {
-        this.root.classList.toggle('is-selected', selected);
-        if (selected) { this.placeToolbar(); }
-      }
-    }, 300);
+    // Our toolbar is joined to SharePoint's web part toolbar: it appears, fades and disappears
+    // together with it. SharePoint shows its toolbar on hover and on selection, so we re-check
+    // on every frame for a moment after anything that could change it.
+    const doc = this.root.ownerDocument;
+    doc.addEventListener('mouseover', this.onSyncTrigger, true);
+    doc.addEventListener('mousedown', this.onSyncTrigger, true);
+    doc.addEventListener('focusin', this.onSyncTrigger, true);
+    doc.addEventListener('keyup', this.onSyncTrigger, true);
+    doc.addEventListener('transitionrun', this.onSyncTrigger, true);
+    doc.addEventListener('transitionend', this.onSyncTrigger, true);
+    if (typeof MutationObserver !== 'undefined') {
+      this.syncObserver = new MutationObserver((records: MutationRecord[]) => {
+        if (records.some(r => !this.root.contains(r.target) && !(this.popover && this.popover.contains(r.target)))) {
+          this.onSyncTrigger();
+        }
+      });
+      this.syncObserver.observe(doc.body, {
+        subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden']
+      });
+    }
+    this.selectTimer = window.setInterval(() => this.syncWithSharePoint(), 250);
+    this.syncWithSharePoint();
     this.placeToolbar();
+  }
+
+  private syncObserver: MutationObserver | undefined;
+  private syncFrame: number = 0;
+  private syncUntil: number = 0;
+  /** True once SharePoint's toolbar has been seen: from then on ours follows it instead of plain hover. */
+  private joined: boolean = false;
+
+  private readonly onSyncTrigger = (): void => {
+    this.syncUntil = Date.now() + 400;
+    if (this.syncFrame) { return; }
+    const tick = (): void => {
+      this.syncWithSharePoint();
+      this.syncFrame = Date.now() < this.syncUntil ? window.requestAnimationFrame(tick) : 0;
+    };
+    this.syncFrame = window.requestAnimationFrame(tick);
+  };
+
+  private stopSync(): void {
+    const doc = this.root.ownerDocument;
+    doc.removeEventListener('mouseover', this.onSyncTrigger, true);
+    doc.removeEventListener('mousedown', this.onSyncTrigger, true);
+    doc.removeEventListener('focusin', this.onSyncTrigger, true);
+    doc.removeEventListener('keyup', this.onSyncTrigger, true);
+    doc.removeEventListener('transitionrun', this.onSyncTrigger, true);
+    doc.removeEventListener('transitionend', this.onSyncTrigger, true);
+    if (this.syncObserver) { this.syncObserver.disconnect(); }
+    if (this.syncFrame) { window.cancelAnimationFrame(this.syncFrame); }
+    window.clearInterval(this.selectTimer);
+  }
+
+  /** Shows/hides (and fades) our toolbar exactly like SharePoint's toolbar for this web part. */
+  private syncWithSharePoint(): void {
+    const bar = this.findSharePointToolbar();
+    const opacity = bar ? RichTextEditor.effectiveOpacity(bar) : 0;
+    const visible = !!bar && opacity > 0.02;
+    if (visible && !this.joined) {
+      this.joined = true;
+      this.root.classList.add('oict-joined');
+    }
+    const was = this.root.classList.contains('is-selected');
+    this.root.classList.toggle('is-selected', visible);
+    // Mirror SharePoint's fade so both bars appear and disappear as one.
+    this.toolbar.style.opacity = visible && opacity < 0.98 ? String(Math.round(opacity * 100) / 100) : '';
+    if (visible) {
+      this.placeToolbar(bar);
+    } else if (was) {
+      this.syncFocusState();
+    }
+  }
+
+  /** Opacity of an element including its ancestors' (SharePoint may fade a wrapper). */
+  private static effectiveOpacity(el: Element): number {
+    let value = 1;
+    let node: Element | null = el;
+    for (let i = 0; node && i < 8; i++) {
+      const cs = window.getComputedStyle(node);
+      if (cs.visibility === 'hidden' || cs.display === 'none') { return 0; }
+      value *= parseFloat(cs.opacity) || 0;
+      node = node.parentElement;
+    }
+    return value;
   }
 
   /** Hides the floating toolbar once focus has really left the web part (menus and dialogs count as inside). */
@@ -372,7 +448,7 @@ export class RichTextEditor {
       const alignedLeft = Math.abs(b.left - rootBox.left) < 60;
       if (!above || !alignedLeft) { continue; }
       const cs = window.getComputedStyle(bar);
-      if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) === 0) { continue; }
+      if (cs.visibility === 'hidden' || cs.display === 'none') { continue; }
       return bar;
     }
     return undefined;
@@ -393,22 +469,46 @@ export class RichTextEditor {
     return false;
   }
 
-  /** Starts our toolbar just right of SharePoint's toolbar; second row if no room; inside only when clipped. */
-  private placeToolbar(): void {
+  /**
+   * Joins our toolbar onto the right end of SharePoint's toolbar, same top and height, so the two
+   * read as one bar. If there is no room on the right it sits on top of SharePoint's toolbar.
+   * Moves inside the frame only when the area above is really clipped.
+   */
+  private placeToolbar(spBar?: Element): void {
+    const t = this.toolbar.style;
     const inside = this.isAreaAboveClipped();
     this.root.classList.toggle('oict-inside', inside);
     if (inside) {
       this.root.classList.remove('oict-stack');
-      this.toolbar.style.left = '';
+      t.left = ''; t.top = ''; t.height = '';
       return;
     }
     const rootBox = this.root.getBoundingClientRect();
-    const bar = this.findSharePointToolbar();
-    const left = bar ? Math.max(0, bar.getBoundingClientRect().right - rootBox.left + 6) : RichTextEditor.SP_TOOLBAR_FALLBACK;
+    const bar = spBar || this.findSharePointToolbar();
+    if (!bar) {
+      t.top = ''; t.height = '';
+      const left = RichTextEditor.SP_TOOLBAR_FALLBACK;
+      const stack = rootBox.left + left + this.toolbar.offsetWidth > window.innerWidth - 8;
+      this.root.classList.toggle('oict-stack', stack);
+      t.left = stack ? '0px' : `${left}px`;
+      return;
+    }
+    const b = bar.getBoundingClientRect();
+    t.height = `${Math.round(b.height)}px`;
+    const left = b.right - rootBox.left + RichTextEditor.JOIN_GAP;
     const stack = rootBox.left + left + this.toolbar.offsetWidth > window.innerWidth - 8;
     this.root.classList.toggle('oict-stack', stack);
-    this.toolbar.style.left = stack ? '0px' : `${Math.round(left)}px`;
+    if (stack) {
+      t.left = `${Math.round(b.left - rootBox.left)}px`;
+      t.top = `${Math.round(b.top - rootBox.top - b.height - RichTextEditor.JOIN_GAP)}px`;
+    } else {
+      t.left = `${Math.round(left)}px`;
+      t.top = `${Math.round(b.top - rootBox.top)}px`;
+    }
   }
+
+  /** Space between SharePoint's toolbar and ours. */
+  private static readonly JOIN_GAP: number = 4;
 
   private toolButton(cls: string, title: string, html: string, run: (b: HTMLButtonElement) => void): HTMLButtonElement {
     const b = this.root.ownerDocument.createElement('button');
@@ -534,26 +634,44 @@ export class RichTextEditor {
     return b;
   }
 
+  /**
+   * Menus are drawn in a layer on <body> (like SharePoint's own menus), so the next
+   * column on the page can never paint over them. Positions are viewport-based (fixed).
+   */
   private openPopover(anchor: HTMLElement, content: HTMLElement, extraClass: string = '', alignRight: boolean = false): void {
     this.closePopover();
-    const pop = this.el('div', `oict-pop ${extraClass}`);
+    const doc = this.root.ownerDocument;
+    const pop = this.el('div', `oict-pop oict-layer ${extraClass}`);
     pop.appendChild(content);
     pop.addEventListener('keydown', (ev: KeyboardEvent) => this.onMenuKey(ev));
-    this.root.appendChild(pop);
+    doc.body.appendChild(pop);
     anchor.setAttribute('data-oict-pop-anchor', '');
     this.popover = pop;
     this.root.classList.add('has-popover');
+    window.addEventListener('scroll', this.onViewportChange, true);
+    window.addEventListener('resize', this.onViewportChange);
 
-    const rootBox = this.root.getBoundingClientRect();
     const box = anchor.getBoundingClientRect();
     const width = pop.offsetWidth;
-    let left = alignRight ? box.right - rootBox.left - width : box.left - rootBox.left;
+    const height = pop.offsetHeight;
+    let left = alignRight ? box.right - width : box.left;
     // Stay inside the window (the web part can be narrower than the menu).
-    left = Math.max(left, 8 - rootBox.left);
-    left = Math.min(left, window.innerWidth - 8 - width - rootBox.left);
-    pop.style.left = `${left}px`;
-    pop.style.top = `${box.bottom - rootBox.top + 4}px`;
+    left = Math.max(8, Math.min(left, window.innerWidth - 8 - width));
+    let top = box.bottom + 4;
+    if (top + height > window.innerHeight - 8) { top = Math.max(8, window.innerHeight - 8 - height); }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
   }
+
+  /** Scrolling the page (outside the menu) or resizing closes open menus, like SharePoint. */
+  private readonly onViewportChange = (ev: Event): void => {
+    const t = ev.target as Node | null;
+    if (ev.type === 'scroll' && t && t.nodeType === 1 &&
+        ((this.popover && this.popover.contains(t)) || (this.flyout && this.flyout.contains(t)))) {
+      return;
+    }
+    this.closePopover();
+  };
 
   private closeFlyout(): void {
     if (this.flyout) {
@@ -568,6 +686,8 @@ export class RichTextEditor {
 
   private closePopover(): void {
     window.clearTimeout(this.hoverTimer);
+    window.removeEventListener('scroll', this.onViewportChange, true);
+    window.removeEventListener('resize', this.onViewportChange);
     this.closeFlyout();
     this.root.classList.remove('has-popover');
     if (this.popover) {
@@ -584,7 +704,7 @@ export class RichTextEditor {
     if (!this.popover || !this.popover.contains(owner) && !(this.flyout && this.flyout.contains(owner))) { return; }
     if (this.flyoutOwner === owner && this.flyout) { return; }
     this.closeFlyout();
-    const fly = this.el('div', 'oict-pop oict-flyout');
+    const fly = this.el('div', 'oict-pop oict-layer oict-flyout');
     fly.appendChild(content);
     fly.addEventListener('keydown', (ev: KeyboardEvent) => {
       if (ev.key === 'ArrowLeft' || ev.key === 'Escape') {
@@ -597,12 +717,11 @@ export class RichTextEditor {
         this.onMenuKey(ev);
       }
     });
-    this.root.appendChild(fly);
+    this.root.ownerDocument.body.appendChild(fly);
     this.flyout = fly;
     this.flyoutOwner = owner;
     owner.classList.add('is-open');
 
-    const rootBox = this.root.getBoundingClientRect();
     const menuBox = (this.popover || owner).getBoundingClientRect();
     const rowBox = owner.getBoundingClientRect();
     const w = fly.offsetWidth;
@@ -611,8 +730,8 @@ export class RichTextEditor {
     if (left + w > window.innerWidth - 8) { left = Math.max(8, menuBox.left - w + 2); }
     let top = rowBox.top - 5;
     if (top + h > window.innerHeight - 8) { top = Math.max(8, window.innerHeight - 8 - h); }
-    fly.style.left = `${left - rootBox.left}px`;
-    fly.style.top = `${top - rootBox.top}px`;
+    fly.style.left = `${Math.round(left)}px`;
+    fly.style.top = `${Math.round(top)}px`;
   }
 
   /** Up/Down moves between items, Right opens a flyout, Enter/Space activates. */
