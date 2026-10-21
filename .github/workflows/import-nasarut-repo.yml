@@ -1,0 +1,205 @@
+name: Import Nasarut-inchrome repo ZIP and build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Nasarut-inchrome-repo.zip'
+      - '.github/workflows/import-nasarut-repo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nasarut-inchrome-release
+  cancel-in-progress: false
+
+jobs:
+  import-build-clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate and import ZIP
+        id: importer
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          from zipfile import ZipFile
+          import json, stat, hashlib
+          from datetime import date
+
+          archive = Path('Nasarut-inchrome-repo.zip')
+          if not archive.is_file():
+              raise SystemExit('Nasarut-inchrome-repo.zip was not found at the repository root')
+          if archive.stat().st_size > 15_000_000:
+              raise SystemExit('ZIP exceeds the 15 MB maximum')
+
+          config_path = Path('nasarut-inchrome/config/package-solution.json')
+          old_config = json.loads(config_path.read_text(encoding='utf-8'))
+          old_version = old_config['solution']['version']
+          required = {
+              'nasarut-inchrome/package.json',
+              'nasarut-inchrome/package-lock.json',
+              'nasarut-inchrome/config/package-solution.json',
+              'nasarut-inchrome/src/webparts/nasarutInchrome/NasarutInchromeWebPart.ts',
+              'nasarut-inchrome/src/webparts/nasarutInchrome/NasarutInchromeWebPart.manifest.json',
+              'nasarut-inchrome/src/webparts/nasarutInchrome/editor/RichTextEditor.ts',
+          }
+          ids = {
+              'solution': '968f0272-ec25-46a0-a351-6f35299b8d24',
+              'feature': '920d0ed3-0a19-41e4-9d44-82c40c02cc02',
+              'webpart': '212a363a-17f4-4bde-98e0-3e855aa31402',
+          }
+
+          with ZipFile(archive) as z:
+              entries = [i for i in z.infolist() if not i.is_dir()]
+              names = [i.filename for i in entries]
+              if len(names) != len(set(names)) or len(names) > 150:
+                  raise SystemExit('Archive has duplicate paths or too many files')
+              if not required.issubset(set(names)):
+                  raise SystemExit('Archive is missing required SPFx files: '+str(required-set(names)))
+              if sum(i.file_size for i in entries) > 24_000_000 or any(i.file_size > 8_000_000 for i in entries):
+                  raise SystemExit('Archive has unexpectedly large extracted files')
+              for info in entries:
+                  p=PurePosixPath(info.filename)
+                  if (p.is_absolute() or '..' in p.parts or '\\' in info.filename
+                      or any(part in ('.git', 'node_modules') for part in p.parts)
+                      or not (info.filename == 'README.md'
+                              or info.filename.startswith('nasarut-inchrome/')
+                              or info.filename.startswith('dist/')
+                              or info.filename.startswith('.github/'))):
+                      raise SystemExit('Unsafe or unexpected path: '+info.filename)
+                  if stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK:
+                      raise SystemExit('Symlink in ZIP: '+info.filename)
+              incoming = json.loads(z.read('nasarut-inchrome/config/package-solution.json'))
+              manifest = json.loads(z.read('nasarut-inchrome/src/webparts/nasarutInchrome/NasarutInchromeWebPart.manifest.json'))
+              solution = incoming['solution']
+              if (solution['id'].lower()!=ids['solution']
+                  or solution['features'][0]['id'].lower()!=ids['feature']
+                  or manifest['id'].lower()!=ids['webpart']):
+                  raise SystemExit('Solution/Feature/Web Part IDs do not match installed app')
+              incoming_version=solution['version']
+              def parts(v):
+                  a=v.split('.')
+                  if len(a)!=4 or any(not n.isdigit() for n in a):
+                      raise SystemExit('Invalid SPFx app version: '+v)
+                  return tuple(map(int,a))
+              if parts(incoming_version)<parts(old_version):
+                  raise SystemExit('ZIP version '+incoming_version+' is older than '+old_version)
+
+              changed=[]
+              for info in entries:
+                  filename=info.filename
+                  if filename!='README.md' and not filename.startswith('nasarut-inchrome/'):
+                      continue
+                  if filename.startswith('nasarut-inchrome/node_modules/'):
+                      continue
+                  if filename.startswith('nasarut-inchrome/sharepoint/solution/'):
+                      continue
+                  data=z.read(info)
+                  dest=Path(filename)
+                  if not dest.is_file() or dest.read_bytes()!=data:
+                      changed.append(filename)
+                  dest.parent.mkdir(parents=True,exist_ok=True)
+                  dest.write_bytes(data)
+          if not changed:
+              print('No changes to the source files; current version stays '+old_version)
+              release=old_version
+          elif parts(incoming_version)==parts(old_version):
+              seq=list(parts(old_version))
+              seq[2]+=1
+              seq[3]=0
+              release='.'.join(map(str,seq))
+              print('Source changed without a version bump; bumping '+old_version+' to '+release)
+          else:
+              release=incoming_version
+          output=json.loads(config_path.read_text(encoding='utf-8'))
+          output['solution']['version']=release
+          for feature in output['solution']['features']:
+              feature['version']=release
+          config_path.write_text(json.dumps(output,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+
+          # Maintain existing changelog and its link; do not trust ZIP workflows or binaries.
+          readme=Path('README.md')
+          readme_txt=readme.read_text(encoding='utf-8')
+          link='[ดูประวัติการเปลี่ยนแปลงแต่ละเวอร์ชัน (Changelog)](CHANGELOG.md)'
+          if link not in readme_txt:
+              readme_txt=readme_txt.replace('# Nasarut-inchrome\n','# Nasarut-inchrome\n\n'+link+'\n',1)
+          readme_txt=readme_txt.replace('| Version | `'+incoming_version+'` |','| Version | `'+release+'` |')
+          readme.write_text(readme_txt,encoding='utf-8')
+          cl=Path('CHANGELOG.md')
+          history=cl.read_text(encoding='utf-8')
+          if release!=old_version and '## '+release not in history:
+              import re
+              history=re.sub(r'(?m)^(## \d+\.\d+\.\d+\.\d+[^\n]*?)\s*\(เวอร์ชันปัจจุบัน\)',r'\1',history)
+              entry=('## '+release+' — '+date.today().strftime('%d/%m/%Y')+' (เวอร์ชันปัจจุบัน)\n\n'
+                 '**อัปเดตจาก ZIP ใน GitHub**\n\n'
+                 '- นำ Source Code ชุดล่าสุดจาก `Nasarut-inchrome-repo.zip` มาอัปเดตและ Build ใหม่\n'
+                 '- รักษา Solution ID, Feature ID และ Web Part ID เดิมสำหรับอัปเกรดแอป\n'
+                 '- ไฟล์ที่เปลี่ยน: '+', '.join('`'+x+'`' for x in changed[:12])+'\n\n')
+              insert=history.find('\n## ')
+              if insert<0:
+                  history+='\n'+entry
+              else:
+                  history=history[:insert+1]+ '\n'+entry+history[insert+1:]
+              cl.write_text(history,encoding='utf-8')
+          with open('import-release-version.txt','w',encoding='utf-8') as f:
+              f.write(release)
+          print('Previous version: '+old_version)
+          print('Version found in ZIP: '+incoming_version)
+          print('Release version: '+release)
+          print('Changed source files: '+str(len(changed)))
+          for f in changed: print('  '+f)
+          with open(__import__('os').environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+              f.write('version='+release+'\n')
+          PY
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: nasarut-inchrome/package-lock.json
+
+      - name: Install locked dependencies
+        working-directory: nasarut-inchrome
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        working-directory: nasarut-inchrome
+        run: npx heft build --clean --production
+
+      - name: Package SPFx solution
+        working-directory: nasarut-inchrome
+        run: npx heft package-solution --production
+
+      - name: Publish package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nasarut-inchrome-${{ steps.importer.outputs.version }}
+          path: nasarut-inchrome/sharepoint/solution/nasarut-inchrome.sppkg
+          if-no-files-found: error
+
+      - name: Commit validated source, package and delete ZIP
+        shell: bash
+        run: |
+          cp nasarut-inchrome/sharepoint/solution/nasarut-inchrome.sppkg dist/Nasarut-inchrome.sppkg
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A nasarut-inchrome README.md CHANGELOG.md
+          git add -f dist/Nasarut-inchrome.sppkg
+          git rm -- 'Nasarut-inchrome-repo.zip'
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+          git commit -m "Import Nasarut-inchrome ${{ steps.importer.outputs.version }} and remove ZIP"
+          git pull --rebase origin main
+          git push origin HEAD:main
