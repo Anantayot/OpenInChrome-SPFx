@@ -81,13 +81,14 @@ jobs:
           mkdir -p dist
           PACKAGE="$(find build-project -type f -path '*/sharepoint/solution/*.sppkg' -print -quit)"
           test -n "$PACKAGE"
-          cp "$PACKAGE" dist/Nasarut-inchrome.sppkg
+          mkdir -p dist/legacy
+          cp "$PACKAGE" dist/legacy/Nasarut-inchrome-link-v1.0.2.0.sppkg
           git rm -f dist/OpenInChrome.sppkg || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/Nasarut-inchrome.sppkg
+          git add -f dist/legacy/Nasarut-inchrome-link-v1.0.2.0.sppkg
           if ! git diff --cached --quiet; then
-            git commit -m "Store latest built Nasarut-inchrome .sppkg"
+            git commit -m "Store legacy Nasarut-inchrome link package"
             git push origin HEAD:main
           else
             echo "Built package already saved in repository"

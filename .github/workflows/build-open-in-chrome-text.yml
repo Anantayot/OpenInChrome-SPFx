@@ -45,7 +45,7 @@ jobs:
       - name: Upload .sppkg
         uses: actions/upload-artifact@v4
         with:
-          name: OpenInChromeText-sppkg
+          name: Nasarut-inchrome-sppkg
           path: open-in-chrome-text/sharepoint/solution/open-in-chrome-text.sppkg
           if-no-files-found: error
 
@@ -53,12 +53,12 @@ jobs:
         working-directory: .
         run: |
           mkdir -p dist
-          cp open-in-chrome-text/sharepoint/solution/open-in-chrome-text.sppkg dist/OpenInChromeText.sppkg
+          cp open-in-chrome-text/sharepoint/solution/open-in-chrome-text.sppkg dist/Nasarut-inchrome.sppkg
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/OpenInChromeText.sppkg
+          git add -f dist/Nasarut-inchrome.sppkg
           if ! git diff --cached --quiet; then
-            git commit -m "Build OpenInChromeText.sppkg"
+            git commit -m "Build Nasarut-inchrome.sppkg"
             git push origin HEAD:main
           else
             echo "Package unchanged"
