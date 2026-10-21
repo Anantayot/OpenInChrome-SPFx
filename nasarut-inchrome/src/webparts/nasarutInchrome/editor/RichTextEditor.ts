@@ -192,6 +192,16 @@ export class RichTextEditor {
         !t.closest?.('[data-oict-pop-anchor]')) {
       this.closePopover();
     }
+    // A click in another web part ends editing here even if SharePoint keeps focus where it was,
+    // so the toolbar does not stay up (stuck at the top) next to the other web part's toolbar.
+    // Clicks on a scrollbar or empty page area (an ancestor of this web part) are left to the focus logic.
+    if (this.root.classList.contains('is-focused') && t && !this.root.contains(t) && !this.toolbar.contains(t) &&
+        !t.contains?.(this.root) && !(this.popover && this.popover.contains(t)) && !(this.flyout && this.flyout.contains(t)) &&
+        !t.closest?.('.oict-cd-backdrop, .oict-ld-backdrop')) {
+      window.clearTimeout(this.blurTimer);
+      this.root.classList.remove('is-focused');
+      this.placeToolbar();
+    }
   };
   private readonly onEditorMouseUp = (): void => {
     if (this.painting && !this.editor.state.selection.empty) {
@@ -236,6 +246,8 @@ export class RichTextEditor {
       element: body,
       content: sanitizeHtml(options.html),
       editorProps: {
+        // No spell/grammar squiggles (red and blue underlines) while editing.
+        attributes: { spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' },
         transformPastedHTML: (html: string) => normalizePastedHtml(liftLinkStyles(html), doc, options.themeColors)
       },
       extensions: [
@@ -313,29 +325,38 @@ export class RichTextEditor {
   // ---------- toolbar placement ----------
 
   /**
-   * Like the SharePoint Text web part, the toolbar sits above the web part frame,
-   * right after SharePoint's own web part toolbar (drag, settings, duplicate, delete),
-   * and may extend past the column. It shows whenever SharePoint shows its toolbar for
-   * this web part (web part selected), and while the text is focused or hovered.
+   * Like the SharePoint Text web part, the toolbar is joined onto SharePoint's own web part toolbar
+   * (drag, settings, duplicate, delete): same row, same height, shown and faded together with it.
+   * It is drawn on the page's top layer (attached to <body>, position: fixed) so nothing on the page
+   * - other columns, section outlines - can paint over it. While editing, when the page is scrolled
+   * so it would go off the top, it sticks to the top of the visible area like the Text toolbar.
    * Only if the page really clips the area above the web part does it move inside the frame.
    */
   private setupToolbarPlacement(): void {
     this.root.classList.add('oict-float');
-    const show = (): void => this.placeToolbar();
-    this.root.addEventListener('focusin', () => {
+    this.toolbarHome = this.root.ownerDocument.createComment('oict-toolbar');
+    this.root.insertBefore(this.toolbarHome, this.toolbar);
+    const onFocusIn = (): void => {
       window.clearTimeout(this.blurTimer);
       this.root.classList.add('is-focused');
-      show();
-    });
+      this.placeToolbar();
+    };
+    this.root.addEventListener('focusin', onFocusIn);
+    this.toolbar.addEventListener('focusin', onFocusIn);
     this.root.addEventListener('focusout', () => this.syncFocusState());
-    this.root.addEventListener('mouseenter', show);
+    this.toolbar.addEventListener('focusout', () => this.syncFocusState());
+    this.root.addEventListener('mouseenter', () => { this.rootHover = true; this.placeToolbar(); });
+    this.root.addEventListener('mouseleave', () => { this.rootHover = false; this.refreshShown(); });
+    this.toolbar.addEventListener('mouseenter', () => { this.toolbarHover = true; this.refreshShown(); });
+    this.toolbar.addEventListener('mouseleave', () => { this.toolbarHover = false; this.refreshShown(); });
+    // Clicking the toolbar's empty space must not take focus out of the text.
+    this.toolbar.addEventListener('mousedown', (ev: MouseEvent) => ev.preventDefault());
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => this.placeToolbar());
       this.resizeObserver.observe(this.root);
     }
-    // Our toolbar is joined to SharePoint's web part toolbar: it appears, fades and disappears
-    // together with it. SharePoint shows its toolbar on hover and on selection, so we re-check
-    // on every frame for a moment after anything that could change it.
+    // SharePoint shows its toolbar on hover and on selection, so re-check on every frame for a
+    // moment after anything that could change it.
     const doc = this.root.ownerDocument;
     doc.addEventListener('mouseover', this.onSyncTrigger, true);
     doc.addEventListener('mousedown', this.onSyncTrigger, true);
@@ -345,7 +366,8 @@ export class RichTextEditor {
     doc.addEventListener('transitionend', this.onSyncTrigger, true);
     if (typeof MutationObserver !== 'undefined') {
       this.syncObserver = new MutationObserver((records: MutationRecord[]) => {
-        if (records.some(r => !this.root.contains(r.target) && !(this.popover && this.popover.contains(r.target)))) {
+        if (records.some(r => !this.root.contains(r.target) && !this.toolbar.contains(r.target) &&
+            !(this.popover && this.popover.contains(r.target)))) {
           this.onSyncTrigger();
         }
       });
@@ -353,6 +375,8 @@ export class RichTextEditor {
         subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden']
       });
     }
+    window.addEventListener('scroll', this.onPageScroll, true);
+    window.addEventListener('resize', this.onPageScroll);
     this.selectTimer = window.setInterval(() => this.syncWithSharePoint(), 250);
     this.syncWithSharePoint();
     this.placeToolbar();
@@ -363,6 +387,13 @@ export class RichTextEditor {
   private syncUntil: number = 0;
   /** True once SharePoint's toolbar has been seen: from then on ours follows it instead of plain hover. */
   private joined: boolean = false;
+  private rootHover: boolean = false;
+  private toolbarHover: boolean = false;
+  /** Toolbar position is above the visible page area (scrolled away) and it is not stuck. */
+  private offscreen: boolean = false;
+  private toolbarHome: Comment | undefined;
+  /** SharePoint's toolbar box relative to the web part, last time it was seen. */
+  private lastBar: { left: number; right: number; top: number; height: number } | undefined;
 
   private readonly onSyncTrigger = (): void => {
     this.syncUntil = Date.now() + 400;
@@ -372,6 +403,12 @@ export class RichTextEditor {
       this.syncFrame = Date.now() < this.syncUntil ? window.requestAnimationFrame(tick) : 0;
     };
     this.syncFrame = window.requestAnimationFrame(tick);
+  };
+
+  private readonly onPageScroll = (ev: Event): void => {
+    const t = ev.target;
+    if (this.popover && t instanceof Node && this.popover.contains(t)) { return; }
+    this.placeToolbar();
   };
 
   private stopSync(): void {
@@ -385,6 +422,9 @@ export class RichTextEditor {
     if (this.syncObserver) { this.syncObserver.disconnect(); }
     if (this.syncFrame) { window.cancelAnimationFrame(this.syncFrame); }
     window.clearInterval(this.selectTimer);
+    window.removeEventListener('scroll', this.onPageScroll, true);
+    window.removeEventListener('resize', this.onPageScroll);
+    this.toolbar.remove();
   }
 
   /** Shows/hides (and fades) our toolbar exactly like SharePoint's toolbar for this web part. */
@@ -400,11 +440,8 @@ export class RichTextEditor {
     this.root.classList.toggle('is-selected', visible);
     // Mirror SharePoint's fade so both bars appear and disappear as one.
     this.toolbar.style.opacity = visible && opacity < 0.98 ? String(Math.round(opacity * 100) / 100) : '';
-    if (visible) {
-      this.placeToolbar(bar);
-    } else if (was) {
-      this.syncFocusState();
-    }
+    if (was && !visible) { this.syncFocusState(); }
+    this.placeToolbar(bar);
   }
 
   /** Opacity of an element including its ancestors' (SharePoint may fade a wrapper). */
@@ -426,14 +463,17 @@ export class RichTextEditor {
     this.blurTimer = window.setTimeout(() => {
       const active = this.root.ownerDocument.activeElement;
       const inDialog = !!(active && (active as Element).closest?.('.oict-cd-backdrop, .oict-ld-backdrop'));
-      if (!this.popover && !inDialog && !(active && this.root.contains(active))) {
+      if (!this.popover && !inDialog && !(active && (this.root.contains(active) || this.toolbar.contains(active)))) {
         this.root.classList.remove('is-focused');
       }
+      this.placeToolbar();
     }, 120);
   }
 
   /** Width SharePoint's web part toolbar usually takes when it cannot be found on the page. */
   private static readonly SP_TOOLBAR_FALLBACK: number = 160;
+  /** Space between SharePoint's toolbar and ours. */
+  private static readonly JOIN_GAP: number = 4;
 
   /** SharePoint's visible web part toolbar for this web part, if any (it sits just above the frame, left-aligned). */
   private findSharePointToolbar(): Element | undefined {
@@ -441,7 +481,8 @@ export class RichTextEditor {
     if (!rootBox.width) { return undefined; }
     const bars = Array.from(this.root.ownerDocument.querySelectorAll('[role="toolbar"]'));
     for (const bar of bars) {
-      if (bar === this.toolbar || this.root.contains(bar)) { continue; }
+      // Never our own toolbar, nor the toolbar of another Nasarut-inchrome web part.
+      if (bar.classList.contains('oict-toolbar') || this.root.contains(bar)) { continue; }
       const b = bar.getBoundingClientRect();
       if (!b.width || !b.height) { continue; }
       const above = b.bottom <= rootBox.top + 4 && b.bottom >= rootBox.top - 70;
@@ -454,14 +495,17 @@ export class RichTextEditor {
     return undefined;
   }
 
-  /** True when an ancestor with overflow clipping cuts off the area above the web part. */
+  /**
+   * True when an ancestor with overflow clipping cuts off the area above the web part.
+   * Measured in the ancestor's content coordinates, so simply scrolling the page down does not count.
+   */
   private isAreaAboveClipped(): boolean {
-    const rootBox = this.root.getBoundingClientRect();
-    const top = rootBox.top - 50;
+    const rootTop = this.root.getBoundingClientRect().top;
     let el = this.root.parentElement;
     while (el && el !== this.root.ownerDocument.body) {
       const cs = window.getComputedStyle(el);
-      if (/(hidden|clip|auto|scroll)/.test(cs.overflowY + cs.overflow) && el.getBoundingClientRect().top > top) {
+      if (/(hidden|clip|auto|scroll)/.test(cs.overflowY + cs.overflow) &&
+          rootTop - el.getBoundingClientRect().top + el.scrollTop < 50) {
         return true;
       }
       el = el.parentElement;
@@ -469,46 +513,107 @@ export class RichTextEditor {
     return false;
   }
 
-  /**
-   * Joins our toolbar onto the right end of SharePoint's toolbar, same top and height, so the two
-   * read as one bar. If there is no room on the right it sits on top of SharePoint's toolbar.
-   * Moves inside the frame only when the area above is really clipped.
-   */
-  private placeToolbar(spBar?: Element): void {
-    const t = this.toolbar.style;
-    const inside = this.isAreaAboveClipped();
-    this.root.classList.toggle('oict-inside', inside);
-    if (inside) {
-      this.root.classList.remove('oict-stack');
+  /** Top of the visible page area (below SharePoint's command bar when the canvas scrolls in its own region). */
+  private visibleTop(): number {
+    let el = this.root.parentElement;
+    while (el && el !== this.root.ownerDocument.body) {
+      const cs = window.getComputedStyle(el);
+      if (/(auto|scroll|overlay)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1) {
+        return Math.max(0, el.getBoundingClientRect().top + el.clientTop);
+      }
+      el = el.parentElement;
+    }
+    return 0;
+  }
+
+  /** Puts the toolbar inside the web part (true) or on the page's top layer (false). */
+  private mountToolbar(inside: boolean): void {
+    const inBody = this.toolbar.parentNode === this.root.ownerDocument.body;
+    if (inside && inBody) {
+      this.toolbar.classList.remove('oict-layer-tb', 'oict-shown', 'oict-stuck');
+      if (this.toolbarHome && this.toolbarHome.parentNode) {
+        this.toolbarHome.parentNode.insertBefore(this.toolbar, this.toolbarHome.nextSibling);
+      } else {
+        this.root.insertBefore(this.toolbar, this.root.firstChild);
+      }
+      const t = this.toolbar.style;
       t.left = ''; t.top = ''; t.height = '';
-      return;
-    }
-    const rootBox = this.root.getBoundingClientRect();
-    const bar = spBar || this.findSharePointToolbar();
-    if (!bar) {
-      t.top = ''; t.height = '';
-      const left = RichTextEditor.SP_TOOLBAR_FALLBACK;
-      const stack = rootBox.left + left + this.toolbar.offsetWidth > window.innerWidth - 8;
-      this.root.classList.toggle('oict-stack', stack);
-      t.left = stack ? '0px' : `${left}px`;
-      return;
-    }
-    const b = bar.getBoundingClientRect();
-    t.height = `${Math.round(b.height)}px`;
-    const left = b.right - rootBox.left + RichTextEditor.JOIN_GAP;
-    const stack = rootBox.left + left + this.toolbar.offsetWidth > window.innerWidth - 8;
-    this.root.classList.toggle('oict-stack', stack);
-    if (stack) {
-      t.left = `${Math.round(b.left - rootBox.left)}px`;
-      t.top = `${Math.round(b.top - rootBox.top - b.height - RichTextEditor.JOIN_GAP)}px`;
-    } else {
-      t.left = `${Math.round(left)}px`;
-      t.top = `${Math.round(b.top - rootBox.top)}px`;
+    } else if (!inside && !inBody) {
+      this.toolbar.classList.add('oict-layer-tb');
+      this.root.ownerDocument.body.appendChild(this.toolbar);
     }
   }
 
-  /** Space between SharePoint's toolbar and ours. */
-  private static readonly JOIN_GAP: number = 4;
+  /** Whether the toolbar should be visible right now (same rules the Text web part uses). */
+  private refreshShown(): void {
+    const c = this.root.classList;
+    const shown = !this.offscreen && (c.contains('is-focused') || c.contains('is-selected') || c.contains('has-popover') ||
+      this.toolbarHover || (!this.joined && this.rootHover));
+    this.toolbar.classList.toggle('oict-shown', shown);
+  }
+
+  /** Positions the toolbar (viewport coordinates) next to SharePoint's toolbar, stuck at the top while editing. */
+  private placeToolbar(spBar?: Element): void {
+    if (!this.root.isConnected) { return; }
+    const inside = this.isAreaAboveClipped();
+    this.root.classList.toggle('oict-inside', inside);
+    this.mountToolbar(inside);
+    if (inside) {
+      this.root.classList.remove('oict-stack');
+      this.offscreen = false;
+      this.refreshShown();
+      return;
+    }
+    const rootBox = this.root.getBoundingClientRect();
+    const width = this.toolbar.offsetWidth;
+    const h = this.toolbar.offsetHeight || 40;
+    const bar = spBar || this.findSharePointToolbar();
+    let left: number;
+    let top: number;
+    let height = '';
+    let stack: boolean;
+    if (bar) {
+      const r = bar.getBoundingClientRect();
+      this.lastBar = { left: r.left - rootBox.left, right: r.right - rootBox.left, top: r.top - rootBox.top, height: r.height };
+    }
+    if (this.lastBar) {
+      // Where SharePoint's toolbar is (or was last seen, so ours does not jump while it fades out).
+      const lb = this.lastBar;
+      const b = { left: rootBox.left + lb.left, right: rootBox.left + lb.right, top: rootBox.top + lb.top, height: lb.height };
+      height = `${Math.round(b.height)}px`;
+      left = b.right + RichTextEditor.JOIN_GAP;
+      top = b.top;
+      stack = left + width > window.innerWidth - 8;
+      if (stack) { left = b.left; top = b.top - b.height - RichTextEditor.JOIN_GAP; }
+    } else {
+      left = rootBox.left + RichTextEditor.SP_TOOLBAR_FALLBACK;
+      top = rootBox.top - h - 8;
+      stack = left + width > window.innerWidth - 8;
+      if (stack) { left = rootBox.left; top = rootBox.top - h - 56; }
+    }
+    this.root.classList.toggle('oict-stack', stack);
+    const editing = this.root.classList.contains('is-focused') || !!this.popover;
+    const boundary = this.visibleTop();
+    let stuck = false;
+    this.offscreen = false;
+    if (top < boundary + 4) {
+      if (editing && rootBox.bottom > boundary + h + 16) {
+        stuck = true;
+        top = boundary + 4;
+        left = rootBox.left;
+      } else {
+        // Scrolled away: never draw over SharePoint's command bar.
+        this.offscreen = true;
+      }
+    }
+    left = Math.max(8, Math.min(left, window.innerWidth - 8 - width));
+    this.toolbar.classList.toggle('oict-stuck', stuck);
+    const t = this.toolbar.style;
+    t.left = `${Math.round(left)}px`;
+    t.top = `${Math.round(top)}px`;
+    t.height = stuck ? '' : height;
+    this.refreshShown();
+  }
 
   private toolButton(cls: string, title: string, html: string, run: (b: HTMLButtonElement) => void): HTMLButtonElement {
     const b = this.root.ownerDocument.createElement('button');
@@ -648,6 +753,7 @@ export class RichTextEditor {
     anchor.setAttribute('data-oict-pop-anchor', '');
     this.popover = pop;
     this.root.classList.add('has-popover');
+    this.refreshShown();
     window.addEventListener('scroll', this.onViewportChange, true);
     window.addEventListener('resize', this.onViewportChange);
 
@@ -690,6 +796,7 @@ export class RichTextEditor {
     window.removeEventListener('resize', this.onViewportChange);
     this.closeFlyout();
     this.root.classList.remove('has-popover');
+    this.refreshShown();
     if (this.popover) {
       this.popover.remove();
       this.popover = undefined;

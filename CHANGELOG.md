@@ -7,7 +7,16 @@
 
 
 
-## 1.2.3.0 — 21/10/2026 (เวอร์ชันปัจจุบัน)
+
+## 1.2.4.0 — 21/10/2026 (เวอร์ชันปัจจุบัน)
+
+**อัปเดตจาก ZIP ใน GitHub**
+
+- นำ Source Code ชุดล่าสุดจาก `Nasarut-inchrome-repo.zip` มาอัปเดตและ Build ใหม่
+- รักษา Solution ID, Feature ID และ Web Part ID เดิมสำหรับอัปเกรดแอป
+- ไฟล์ที่เปลี่ยน: `README.md`, `nasarut-inchrome/src/webparts/nasarutInchrome/editor/styles.ts`, `nasarut-inchrome/src/webparts/nasarutInchrome/editor/RichTextEditor.ts`
+
+## 1.2.3.0 — 21/10/2026
 
 **ปรับปรุง Toolbar ให้ทำงานร่วมกับ SharePoint**
 

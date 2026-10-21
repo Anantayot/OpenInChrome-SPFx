@@ -39,6 +39,9 @@ const CSS: string = `
 .oict-float:not(.oict-inside) .ProseMirror{margin-top:0}
 .oict-float.oict-stack:not(.oict-inside) .oict-toolbar{bottom:calc(100% + 56px)}
 .oict-float.oict-joined .oict-toolbar{transition:none}
+.oict-toolbar.oict-layer-tb{position:fixed !important;bottom:auto !important;right:auto !important;z-index:999980;visibility:hidden;opacity:0;transition:none;max-width:none;font-family:"Segoe UI","Leelawadee UI",Tahoma,sans-serif;font-size:14px;line-height:1.3;color:#323130;text-align:left;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.oict-toolbar.oict-layer-tb.oict-shown{visibility:visible;opacity:1}
+.oict-toolbar.oict-layer-tb.oict-stuck{box-shadow:0 2px 8px rgba(0,0,0,.18)}
 @media (prefers-reduced-motion:reduce){.oict-float .oict-toolbar{transition:none}}
 .oict-btn,.oict-drop{height:32px;display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;border-radius:3px;background:transparent;color:#323130;cursor:pointer;font:inherit;font-size:14px;padding:0 6px;white-space:nowrap}
 .oict-btn{width:32px;padding:0}
@@ -48,7 +51,8 @@ const CSS: string = `
 .oict-btn svg,.oict-drop svg,.oict-item svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .oict-drop svg{width:12px;height:12px}
 .oict-drop-style{min-width:118px;justify-content:space-between;border:1px solid transparent}
-.oict-drop-size{min-width:52px;justify-content:space-between}
+.oict-drop-size{min-width:58px;height:28px;justify-content:space-between;border:1px solid #c8c6c4;border-radius:4px;margin:0 2px}
+.oict-drop-size:hover{border-color:#8a8886}
 .oict-drop-label{overflow:hidden;text-overflow:ellipsis;max-width:150px}
 .oict-editor .ProseMirror{min-height:90px;outline:none;padding:10px 4px}
 .oict-editor .ProseMirror p.is-editor-empty:first-child::before{content:attr(data-placeholder);color:#a19f9d;float:left;height:0;pointer-events:none}
