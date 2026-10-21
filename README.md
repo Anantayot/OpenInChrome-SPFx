@@ -1,5 +1,7 @@
 # Nasarut-inchrome
 
+[ดูประวัติการเปลี่ยนแปลงแต่ละเวอร์ชัน (Changelog)](CHANGELOG.md)
+
 SPFx web part สำหรับ SharePoint Online ที่แก้ข้อความบนหน้าเพจได้เหมือน Text web part
 และตอนใส่ลิงก์ติ๊ก **"เปิดด้วย Chrome"** ได้ ระบบจะเติม `nasarut-inchrome-chrome:` หน้าลิงก์ให้เอง
 เครื่องผู้ใช้ต้องลงทะเบียน protocol `nasarut-inchrome-chrome` ไว้แล้ว (ใช้ `Open-Chrome.ps1`)
