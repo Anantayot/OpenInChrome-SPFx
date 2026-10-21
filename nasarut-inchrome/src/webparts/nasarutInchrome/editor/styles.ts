@@ -1,12 +1,11 @@
 /** Styles for the editor and the read view. Injected once per page. */
 const CSS: string = `
 .oict{font:inherit;color:inherit;position:relative;word-wrap:break-word}
-.oict-content{font-family:var(--oict-font,inherit);font-size:var(--oict-size,inherit);line-height:var(--oict-lh,inherit)}
-.oict-content p{margin:0 0 .6em;font-family:var(--oict-p-font,inherit);font-size:var(--oict-p-size,inherit);font-weight:var(--oict-p-weight,inherit);line-height:var(--oict-p-lh,inherit)}
-.oict-content h1{font-family:var(--oict-h1-font,inherit);font-size:var(--oict-h1-size,28px);font-weight:var(--oict-h1-weight,600);margin:.4em 0 .3em;line-height:var(--oict-h1-lh,1.25)}
-.oict-content h2{font-family:var(--oict-h2-font,inherit);font-size:var(--oict-h2-size,24px);font-weight:var(--oict-h2-weight,600);margin:.4em 0 .3em;line-height:var(--oict-h2-lh,1.25)}
-.oict-content h3{font-family:var(--oict-h3-font,inherit);font-size:var(--oict-h3-size,20px);font-weight:var(--oict-h3-weight,600);margin:.4em 0 .3em;line-height:var(--oict-h3-lh,1.3)}
-.oict-content h4{font-family:var(--oict-h4-font,inherit);font-size:var(--oict-h4-size,16px);font-weight:var(--oict-h4-weight,600);margin:.4em 0 .3em;line-height:var(--oict-h4-lh,1.3)}
+.oict-content p{margin:0 0 .6em}
+.oict-content h1{font-size:28px;font-weight:600;margin:.4em 0 .3em;line-height:1.25}
+.oict-content h2{font-size:24px;font-weight:600;margin:.4em 0 .3em;line-height:1.25}
+.oict-content h3{font-size:20px;font-weight:600;margin:.4em 0 .3em;line-height:1.3}
+.oict-content h4{font-size:16px;font-weight:600;margin:.4em 0 .3em;line-height:1.3}
 .oict-content ul,.oict-content ol{margin:0 0 .6em;padding-left:1.6em}
 .oict-content li{margin:.15em 0}
 .oict-content li>p{margin:0}

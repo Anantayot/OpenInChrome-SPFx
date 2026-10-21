@@ -3,7 +3,7 @@
   "solution": {
     "name": "Nasarut-inchrome",
     "id": "968f0272-ec25-46a0-a351-6f35299b8d24",
-    "version": "1.2.5.0",
+    "version": "1.2.6.0",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": false,
     "isDomainIsolated": false,
@@ -30,7 +30,7 @@
         "title": "Nasarut-inchrome Feature",
         "description": "Activates the Nasarut-inchrome web part.",
         "id": "920d0ed3-0a19-41e4-9d44-82c40c02cc02",
-        "version": "1.2.5.0"
+        "version": "1.2.6.0"
       }
     ],
     "iconPath": "images/nasarut-inchrome.png"

@@ -23,7 +23,6 @@ import { normalizePastedHtml } from './paste';
 import { buildHref, isAllowedHref, isChromeHref, isSafeImageSrc, stripChrome } from './links';
 import { sanitizeHtml } from './sanitize';
 import { ensureStyles } from './styles';
-import { adoptTextTypographySoon } from './typography';
 
 /** A page shown in the Insert link dialog. */
 export interface ISitePage {
@@ -215,7 +214,6 @@ export class RichTextEditor {
 
   constructor(host: HTMLElement, options: IRichTextEditorOptions) {
     ensureStyles(host.ownerDocument);
-    adoptTextTypographySoon(host.ownerDocument);
     this.options = options;
 
     const doc = host.ownerDocument;
@@ -1620,7 +1618,6 @@ export class RichTextEditor {
 /** Read view used when the page is not in edit mode. */
 export function renderView(host: HTMLElement, html: string): void {
   ensureStyles(host.ownerDocument);
-  adoptTextTypographySoon(host.ownerDocument);
   const view = host.ownerDocument.createElement('div');
   view.className = 'oict oict-content';
   view.innerHTML = sanitizeHtml(html);
