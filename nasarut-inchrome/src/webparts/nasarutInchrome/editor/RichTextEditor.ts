@@ -23,6 +23,7 @@ import { normalizePastedHtml } from './paste';
 import { buildHref, isAllowedHref, isChromeHref, isSafeImageSrc, stripChrome } from './links';
 import { sanitizeHtml } from './sanitize';
 import { ensureStyles } from './styles';
+import { adoptTextTypographySoon } from './typography';
 
 /** A page shown in the Insert link dialog. */
 export interface ISitePage {
@@ -188,6 +189,8 @@ export class RichTextEditor {
   private painting: boolean = false;
   private readonly onDocMouseDown = (e: MouseEvent): void => {
     const t = e.target as Element;
+    // Clicking into this web part makes it the one being edited, even if SharePoint keeps focus elsewhere.
+    if (t && this.root.contains(t)) { RichTextEditor.activate(this); }
     if ((this.popover || this.flyout) && !(this.popover && this.popover.contains(t)) && !(this.flyout && this.flyout.contains(t)) &&
         !t.closest?.('[data-oict-pop-anchor]')) {
       this.closePopover();
@@ -212,6 +215,7 @@ export class RichTextEditor {
 
   constructor(host: HTMLElement, options: IRichTextEditorOptions) {
     ensureStyles(host.ownerDocument);
+    adoptTextTypographySoon(host.ownerDocument);
     this.options = options;
 
     const doc = host.ownerDocument;
@@ -305,6 +309,7 @@ export class RichTextEditor {
     if (this.closeDialog) { this.closeDialog(); }
     window.clearTimeout(this.blurTimer);
     this.stopSync();
+    if (RichTextEditor.activeEditor === this) { RichTextEditor.activeEditor = undefined; }
     if (this.resizeObserver) { this.resizeObserver.disconnect(); }
     this.root.ownerDocument.removeEventListener('mousedown', this.onDocMouseDown, true);
     this.editor.destroy();
@@ -338,6 +343,7 @@ export class RichTextEditor {
     this.root.insertBefore(this.toolbarHome, this.toolbar);
     const onFocusIn = (): void => {
       window.clearTimeout(this.blurTimer);
+      RichTextEditor.activate(this);
       this.root.classList.add('is-focused');
       this.placeToolbar();
     };
@@ -379,6 +385,24 @@ export class RichTextEditor {
     window.addEventListener('resize', this.onPageScroll);
     this.selectTimer = window.setInterval(() => this.syncWithSharePoint(), 250);
     this.syncWithSharePoint();
+    this.placeToolbar();
+  }
+
+  /** The one web part being edited on the page; only its toolbar may stay up or stick to the top. */
+  private static activeEditor: RichTextEditor | undefined;
+
+  private static activate(ed: RichTextEditor): void {
+    const prev = RichTextEditor.activeEditor;
+    RichTextEditor.activeEditor = ed;
+    if (prev && prev !== ed) { prev.deactivate(); }
+  }
+
+  /** Another web part is being edited now: drop editing state here and hide the toolbar. */
+  private deactivate(): void {
+    window.clearTimeout(this.blurTimer);
+    this.closePopover();
+    window.clearTimeout(this.blurTimer);
+    this.root.classList.remove('is-focused');
     this.placeToolbar();
   }
 
@@ -547,7 +571,8 @@ export class RichTextEditor {
   /** Whether the toolbar should be visible right now (same rules the Text web part uses). */
   private refreshShown(): void {
     const c = this.root.classList;
-    const shown = !this.offscreen && (c.contains('is-focused') || c.contains('is-selected') || c.contains('has-popover') ||
+    const mine = RichTextEditor.activeEditor === this;
+    const shown = !this.offscreen && ((mine && c.contains('is-focused')) || c.contains('is-selected') || (mine && c.contains('has-popover')) ||
       this.toolbarHover || (!this.joined && this.rootHover));
     this.toolbar.classList.toggle('oict-shown', shown);
   }
@@ -592,7 +617,7 @@ export class RichTextEditor {
       if (stack) { left = rootBox.left; top = rootBox.top - h - 56; }
     }
     this.root.classList.toggle('oict-stack', stack);
-    const editing = this.root.classList.contains('is-focused') || !!this.popover;
+    const editing = RichTextEditor.activeEditor === this && (this.root.classList.contains('is-focused') || !!this.popover);
     const boundary = this.visibleTop();
     let stuck = false;
     this.offscreen = false;
@@ -1595,6 +1620,7 @@ export class RichTextEditor {
 /** Read view used when the page is not in edit mode. */
 export function renderView(host: HTMLElement, html: string): void {
   ensureStyles(host.ownerDocument);
+  adoptTextTypographySoon(host.ownerDocument);
   const view = host.ownerDocument.createElement('div');
   view.className = 'oict oict-content';
   view.innerHTML = sanitizeHtml(html);
