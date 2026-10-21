@@ -4,6 +4,7 @@ import OrderedList from '@tiptap/extension-ordered-list';
 import Blockquote from '@tiptap/extension-blockquote';
 import Image from '@tiptap/extension-image';
 import Highlight from '@tiptap/extension-highlight';
+import Table from '@tiptap/extension-table';
 import { isSafeImageSrc } from './links';
 
 /* Custom editor extensions that mirror the SharePoint Text web part. */
@@ -154,7 +155,14 @@ export const StyledBlockquote = Blockquote.extend({
   }
 });
 
-/** Image by address only (no pasted data: images, which would bloat the page). */
+export const IMAGE_ALIGNS: string[] = ['left', 'center', 'right'];
+const ALIGN_VALUE: RegExp = /^(left|center|right)$/;
+
+/**
+ * Image by address only (no pasted data: images, which would bloat the page; pasted image files are
+ * uploaded to Site Assets by the editor instead). Like the Text web part: align left / center / right
+ * and resize by dragging a corner handle (width stored in % of the text width, so it stays responsive).
+ */
 export const SafeImage = Image.extend({
   addAttributes() {
     return {
@@ -163,9 +171,17 @@ export const SafeImage = Image.extend({
         default: null,
         parseHTML: (el: HTMLElement) => {
           const w = el.getAttribute('width') || el.style.width;
-          return w && /^\d{1,4}(px|%)?$/.test(w) ? (/\d$/.test(w) ? `${w}px` : w) : null;
+          return w && /^\d{1,4}(\.\d+)?(px|%)?$/.test(w) ? (/\d$/.test(w) ? `${w}px` : w) : null;
         },
         renderHTML: (a: { width?: string | null }) => a.width ? { style: `width: ${a.width}` } : {}
+      },
+      align: {
+        default: null,
+        parseHTML: (el: HTMLElement) => {
+          const v = el.getAttribute('data-align');
+          return v && ALIGN_VALUE.test(v) ? v : null;
+        },
+        renderHTML: (a: { align?: string | null }) => a.align ? { 'data-align': a.align } : {}
       }
     };
   },
@@ -175,8 +191,111 @@ export const SafeImage = Image.extend({
       getAttrs: (node: HTMLElement | string) =>
         typeof node !== 'string' && isSafeImageSrc(node.getAttribute('src') || '') ? {} : false
     }];
+  },
+  addNodeView() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ({ node, editor, getPos }: any) => {
+      const doc: Document = editor.view.dom.ownerDocument;
+      const wrap = doc.createElement('span');
+      wrap.className = 'oict-img-wrap';
+      wrap.setAttribute('contenteditable', 'false');
+      const img = doc.createElement('img');
+      img.draggable = false;
+      wrap.appendChild(img);
+      const sizeTip = doc.createElement('span');
+      sizeTip.className = 'oict-img-size';
+      wrap.appendChild(sizeTip);
+      let current = node;
+      const apply = (n: typeof node): void => {
+        current = n;
+        if (isSafeImageSrc(n.attrs.src || '')) { img.setAttribute('src', n.attrs.src); } else { img.removeAttribute('src'); }
+        if (n.attrs.alt) { img.setAttribute('alt', n.attrs.alt); } else { img.removeAttribute('alt'); }
+        if (n.attrs.title) { img.setAttribute('title', n.attrs.title); } else { img.removeAttribute('title'); }
+        wrap.style.width = n.attrs.width || '';
+        if (n.attrs.align) { wrap.setAttribute('data-align', n.attrs.align); } else { wrap.removeAttribute('data-align'); }
+      };
+      apply(node);
+
+      ['nw', 'ne', 'sw', 'se'].forEach(h => {
+        const handle = doc.createElement('span');
+        handle.className = 'oict-handle';
+        handle.setAttribute('data-h', h);
+        handle.addEventListener('mousedown', (ev: MouseEvent) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const startX = ev.clientX;
+          const startW = img.getBoundingClientRect().width;
+          const full = Math.max(40, editor.view.dom.clientWidth);
+          const sign = h === 'nw' || h === 'sw' ? -1 : 1;
+          let width = startW;
+          wrap.classList.add('is-resizing');
+          const move = (e: MouseEvent): void => {
+            width = Math.max(40, Math.min(full, startW + sign * (e.clientX - startX) * (current.attrs.align === 'center' ? 2 : 1)));
+            wrap.style.width = `${Math.round(width)}px`;
+            sizeTip.textContent = `${Math.round((width / full) * 100)}%`;
+          };
+          const up = (): void => {
+            doc.removeEventListener('mousemove', move);
+            doc.removeEventListener('mouseup', up);
+            wrap.classList.remove('is-resizing');
+            const pos = typeof getPos === 'function' ? getPos() : undefined;
+            if (typeof pos !== 'number') { apply(current); return; }
+            const pct = Math.max(5, Math.min(100, Math.round((width / full) * 100)));
+            editor.view.dispatch(editor.view.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, width: `${pct}%` }));
+          };
+          doc.addEventListener('mousemove', move);
+          doc.addEventListener('mouseup', up);
+        });
+        wrap.appendChild(handle);
+      });
+
+      return {
+        dom: wrap,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        update: (n: any): boolean => {
+          if (n.type !== current.type) { return false; }
+          apply(n);
+          return true;
+        },
+        selectNode: (): void => { wrap.classList.add('is-selected'); },
+        deselectNode: (): void => { wrap.classList.remove('is-selected'); },
+        stopEvent: (e: Event): boolean => !!(e.target as Element).classList?.contains('oict-handle'),
+        ignoreMutation: (): boolean => true
+      };
+    };
   }
 }).configure({ inline: false, allowBase64: false });
+
+export const TABLE_STYLES: Array<[string, string]> = [
+  ['', 'ธรรมดา'], ['minimal', 'เส้นแนวนอน'], ['banded', 'แถบสลับ'], ['header', 'หัวตารางเทา'],
+  ['theme-header', 'หัวตารางสีธีม'], ['theme-banded', 'แถบสีธีม'], ['theme-lines', 'เส้นสีธีม'], ['theme-accent', 'เน้นสีธีม']
+];
+const TABLE_STYLE_VALUE: RegExp = /^(minimal|banded|header|theme-header|theme-banded|theme-lines|theme-accent)$/;
+
+/** Table with a style (simple or theme-coloured, like the Text web part) and an alignment. */
+export const StyledTable = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      tableStyle: {
+        default: null,
+        parseHTML: (el: HTMLElement) => {
+          const v = el.getAttribute('data-table-style');
+          return v && TABLE_STYLE_VALUE.test(v) ? v : null;
+        },
+        renderHTML: (a: { tableStyle?: string | null }) => a.tableStyle ? { 'data-table-style': a.tableStyle } : {}
+      },
+      align: {
+        default: null,
+        parseHTML: (el: HTMLElement) => {
+          const v = el.getAttribute('data-align');
+          return v && ALIGN_VALUE.test(v) ? v : null;
+        },
+        renderHTML: (a: { align?: string | null }) => a.align ? { 'data-align': a.align } : {}
+      }
+    };
+  }
+});
 
 /** Accessibility → Text language: wraps text in <span lang="...">. */
 export const TextLang = Mark.create({

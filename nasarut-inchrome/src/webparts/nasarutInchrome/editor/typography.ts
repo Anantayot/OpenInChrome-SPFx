@@ -24,6 +24,17 @@ const HIDDEN: string = 'position:absolute;left:-10000px;top:0;width:600px;visibi
 interface ISample { font: string; size: number; weight: string; }
 
 let applied: boolean = false;
+const setNames: string[] = [];
+
+function setVar(style: CSSStyleDeclaration, name: string, value: string): void {
+  style.setProperty(name, value);
+  if (setNames.indexOf(name) < 0) { setNames.push(name); }
+}
+
+function clearVars(doc: Document): void {
+  setNames.forEach(n => doc.documentElement.style.removeProperty(n));
+  setNames.length = 0;
+}
 
 function findTextWebPart(doc: Document): Element | undefined {
   for (const sel of TEXT_WEB_PART) {
@@ -111,6 +122,7 @@ export function adoptTextTypography(doc: Document): boolean {
     plain.outer.remove();
   }
   const root = doc.documentElement.style;
+  clearVars(doc);
   // 'box' is the Text area itself (--oict-font/-size); p and h1-h4 are its own rules for those
   // elements (--oict-p-*, --oict-h1-* ...). Only what the Text web part's CSS changes is copied.
   for (const tag of ['box'].concat(SAMPLE_TAGS)) {
@@ -120,9 +132,9 @@ export function adoptTextTypography(doc: Document): boolean {
     const styled = t.font !== b.font || t.size !== b.size || (tag !== 'box' && t.weight !== b.weight);
     if (!styled) { continue; }
     const key = tag === 'box' ? '' : `-${tag}`;
-    if (SAFE_FONT.test(t.font)) { root.setProperty(`--oict${key}-font`, t.font); }
-    if (t.size) { root.setProperty(`--oict${key}-size`, `${Math.round(t.size * 10) / 10}px`); }
-    if (tag !== 'box' && /^\d{3}$|^(normal|bold)$/.test(t.weight)) { root.setProperty(`--oict${key}-weight`, t.weight); }
+    if (SAFE_FONT.test(t.font)) { setVar(root, `--oict${key}-font`, t.font); }
+    if (t.size) { setVar(root, `--oict${key}-size`, `${Math.round(t.size * 10) / 10}px`); }
+    if (tag !== 'box' && /^\d{3}$|^(normal|bold)$/.test(t.weight)) { setVar(root, `--oict${key}-weight`, t.weight); }
   }
   applied = true;
   return true;
@@ -132,4 +144,10 @@ export function adoptTextTypography(doc: Document): boolean {
 export function adoptTextTypographySoon(doc: Document): void {
   if (adoptTextTypography(doc)) { return; }
   [800, 2500, 6000].forEach(ms => window.setTimeout(() => adoptTextTypography(doc), ms));
+}
+
+/** Measures again (the site theme or its fonts changed). */
+export function refreshTextTypography(doc: Document): void {
+  applied = false;
+  adoptTextTypographySoon(doc);
 }

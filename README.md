@@ -13,7 +13,7 @@ SPFx web part สำหรับ SharePoint Online ที่แก้ข้อ�
 | ชื่อ web part ในหน้าเพจ | Nasarut-inchrome (กลุ่ม Advanced) |
 | Solution ID | `968f0272-ec25-46a0-a351-6f35299b8d24` |
 | Web part ID | `212a363a-17f4-4bde-98e0-3e855aa31402` |
-| Version | `1.2.9.0` |
+| Version | `1.3.0.0` |
 
 ## โครงสร้าง repo
 
@@ -41,6 +41,9 @@ dist/Nasarut-inchrome.sppkg             ไฟล์สำหรับอัป�
   สีไฮไลต์, ตัวยก/ตัวห้อย, ภาษาของข้อความ, ล้างรูปแบบ, รูปแบบคำพูด, การจัดแนว, รายการสัญลักษณ์/ลำดับเลข
   (เลือกรูปแบบ, เริ่มใหม่, ต่อจากรายการก่อน, เริ่มที่เลข), เยื้อง, ระยะห่างบรรทัดและย่อหน้า, แทรกรูปภาพ, แทรกตาราง
 - ฟอนต์ ขนาด และความหนาตัวอักษรตาม Text web part ในหน้า (ถ้าไม่มี Text ใช้ฟอนต์ของหน้า)
+- ระยะบรรทัด 140%, ย่อหน้าห่างหนึ่งบรรทัด, หลังหัวเรื่อง 12px (ตาม Text web part) และ page anchor ของหัวเรื่อง 1–3
+- ตาราง: รูปแบบธรรมดา/สีธีม 8 แบบ และจัดตำแหน่งตาราง
+- รูปภาพ: วางหรือลากรูปมาวาง (อัปโหลดเข้า Site Assets/Nasarut-inchrome), จัดซ้าย/กลาง/ขวา, ลากมุมย่อขยาย, ข้อความแทนรูป
 - แทรกลิงก์: ค้นหา/เลือกหน้าในไซต์ได้, สวิตช์ "เปิดด้วย Chrome" (เติม `nasarut-inchrome-chrome:` ให้) และ "เปิดลิงก์ในแท็บใหม่" ใช้พร้อมกันได้
 - ค้นหาหน้าใช้ SharePoint REST อ่านไลบรารี SitePages ของไซต์เดียวกัน (สิทธิ์ของผู้ใช้เอง ไม่ขอ API permission)
 
@@ -54,7 +57,7 @@ dist/Nasarut-inchrome.sppkg             ไฟล์สำหรับอัป�
 ## แก้ไขโค้ด
 
 1. แก้ไฟล์ใน `nasarut-inchrome/`
-2. เพิ่ม `version` ใน `config/package-solution.json` ทุกครั้ง (เช่น 1.2.9.0 → 1.2.10.0)
+2. เพิ่ม `version` ใน `config/package-solution.json` ทุกครั้ง (เช่น 1.3.0.0 → 1.3.1.0)
 3. push ขึ้น main แล้ว workflow จะ build และ commit `dist/Nasarut-inchrome.sppkg` ให้เอง
 4. อัปโหลดทับใน App Catalog (**Replace**)
 
@@ -76,5 +79,5 @@ npx heft package-solution --production
 - ลิงก์ Chrome ต้องเป็น `nasarut-inchrome-chrome:http(s)://...` ไม่มีช่องว่างหรือเครื่องหมายคำพูด (กฎเดียวกับ `Open-Chrome.ps1`)
 - CSS ในเนื้อหาเก็บได้เฉพาะ สี, ไฮไลต์, ขนาดตัวอักษร, การจัดแนว, ระยะบรรทัด, การเยื้อง, รูปแบบรายการ และความกว้างรูป
 - รูปภาพใช้ได้เฉพาะที่อยู่ http/https หรือ / (ไม่รับรูปแบบ data:)
-- ไม่ใช้ server หรือ CDN ภายนอก และไม่ขอ API permission
+- ไม่ใช้ server หรือ CDN ภายนอก และไม่ขอ API permission (การอัปโหลดรูปใช้ SharePoint REST ของไซต์เดียวกันด้วยสิทธิ์ของผู้แก้ไข รับเฉพาะ PNG/JPG/GIF/WebP/BMP ไม่เกิน 10 MB ไม่รับ SVG)
 - dependency ล็อกด้วย `package-lock.json` และ build ด้วย `npm ci`

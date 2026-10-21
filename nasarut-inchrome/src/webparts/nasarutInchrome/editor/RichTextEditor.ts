@@ -7,16 +7,16 @@ import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
-import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
 import TableCell from '@tiptap/extension-table-cell';
 import Placeholder from '@tiptap/extension-placeholder';
+import { NodeSelection } from '@tiptap/pm/state';
 
 import { FontSize } from './FontSize';
 import {
   LINE_HEIGHTS, MAX_INDENT, ParagraphFormat, SafeImage, SpanHighlight, StyledBlockquote,
-  StyledBulletList, StyledOrderedList, TextLang
+  StyledBulletList, StyledOrderedList, StyledTable, TABLE_STYLES, TextLang
 } from './extensions';
 import { openColorDialog } from './ColorDialog';
 import { normalizePastedHtml } from './paste';
@@ -40,11 +40,15 @@ export interface IRichTextEditorOptions {
   placeholder?: string;
   /** Six colours from the site theme (darkest first) for the "Theme colors" row. */
   themeColors?: string[];
+  /** Uploads a pasted or dropped image file (to the site's Site Assets) and returns its address. */
+  uploadImage?: (file: File) => Promise<string>;
   onChange: (html: string) => void;
 }
 
 const ICONS: { [name: string]: string } = {
   link: '<path d="M6.5 9.5l3-3M5.3 7.7 4 9a2.1 2.1 0 0 0 3 3l1.3-1.3M10.7 8.3 12 7a2.1 2.1 0 0 0-3-3L7.7 5.3"/>',
+  trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M7 7v4M9 7v4"/>',
+  alt: '<rect x="2" y="3.5" width="12" height="9" rx="1"/><path d="M4.5 10l1.5-4 1.5 4M5 9h2M9.5 6v4h2"/>',
   more: '<path d="M3.5 8h.01M8 8h.01M12.5 8h.01" stroke-width="2.4"/>',
   chevron: '<path d="M4.5 6.5 8 10l3.5-3.5"/>',
   check: '<path d="M3.5 8.5 6.5 11.5 12.5 4.5"/>',
@@ -203,6 +207,7 @@ export class RichTextEditor {
     // Only a click on the page's scrollbar keeps editing.
     if ((this.editing || this.root.classList.contains('is-focused')) && t && !this.root.contains(t) && !this.toolbar.contains(t) &&
         !(this.popover && this.popover.contains(t)) && !(this.flyout && this.flyout.contains(t)) &&
+        !(this.imageBar && this.imageBar.contains(t)) &&
         !t.closest?.('.oict-cd-backdrop, .oict-ld-backdrop') && !RichTextEditor.isScrollbarClick(e)) {
       this.endEditing();
     }
@@ -231,6 +236,7 @@ export class RichTextEditor {
     window.clearTimeout(this.blurTimer);
     this.root.classList.remove('is-focused');
     this.placeToolbar();
+    this.refreshImageBar();
   }
 
   private readonly onEditorMouseUp = (): void => {
@@ -277,6 +283,15 @@ export class RichTextEditor {
       element: body,
       content: sanitizeHtml(options.html),
       editorProps: {
+        // Pasted or dropped image files are uploaded to Site Assets and inserted (like the Text web part).
+        handlePaste: (_view: unknown, event: ClipboardEvent) =>
+          this.handleImageFiles(event.clipboardData ? Array.from(event.clipboardData.files) : [], undefined, event),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        handleDrop: (view: any, event: DragEvent, _slice: unknown, moved: boolean) => {
+          if (moved) { return false; }
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+          return this.handleImageFiles(event.dataTransfer ? Array.from(event.dataTransfer.files) : [], at ? at.pos : undefined, event);
+        },
         // No spell/grammar squiggles (red and blue underlines) while editing.
         attributes: { spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' },
         transformPastedHTML: (html: string) => normalizePastedHtml(liftLinkStyles(html), doc, options.themeColors)
@@ -305,7 +320,7 @@ export class RichTextEditor {
           isAllowedUri: (url: string) => isAllowedHref(url)
         }),
         SafeImage,
-        Table.configure({ resizable: false }),
+        StyledTable.configure({ resizable: false }),
         TableRow,
         TableHeader,
         TableCell,
@@ -313,7 +328,7 @@ export class RichTextEditor {
         Shortcuts
       ],
       onUpdate: () => this.scheduleChange(),
-      onTransaction: () => this.refreshToolbar()
+      onTransaction: () => { this.refreshToolbar(); this.refreshImageBar(); }
     });
 
     this.buildToolbar();
@@ -336,6 +351,8 @@ export class RichTextEditor {
     if (this.closeDialog) { this.closeDialog(); }
     window.clearTimeout(this.blurTimer);
     this.stopSync();
+    if (this.imageBar) { this.imageBar.remove(); this.imageBar = undefined; }
+    this.hideStatus();
     if (RichTextEditor.activeEditor === this) { RichTextEditor.activeEditor = undefined; }
     if (this.resizeObserver) { this.resizeObserver.disconnect(); }
     this.root.ownerDocument.removeEventListener('mousedown', this.onDocMouseDown, true);
@@ -464,6 +481,7 @@ export class RichTextEditor {
     const t = ev.target;
     if (this.popover && t instanceof Node && this.popover.contains(t)) { return; }
     this.placeToolbar();
+    if (this.imageBar) { this.refreshImageBar(); }
   };
 
   /** Keyboard focus moved to something else on the page (Tab, another field): editing here is over. */
@@ -473,6 +491,7 @@ export class RichTextEditor {
     const doc = this.root.ownerDocument;
     if (t === doc.body || t === doc.documentElement || this.root.contains(t) || this.toolbar.contains(t) ||
         t.contains(this.root) || (this.popover && this.popover.contains(t)) || (this.flyout && this.flyout.contains(t)) ||
+        (this.imageBar && this.imageBar.contains(t)) ||
         t.closest('.oict-cd-backdrop, .oict-ld-backdrop')) {
       return;
     }
@@ -589,6 +608,26 @@ export class RichTextEditor {
     }
   }
 
+  private copiedLook: string = '';
+
+  /** Makes our toolbar look like SharePoint's own toolbar next to it (background, border, corners, shadow, icon colour). */
+  private copyToolbarLook(bar: Element): void {
+    const cs = window.getComputedStyle(bar);
+    const btn = bar.querySelector('button');
+    const icon = btn ? window.getComputedStyle(btn).color : '';
+    const key = [cs.backgroundColor, cs.borderTopWidth, cs.borderTopStyle, cs.borderTopColor, cs.borderRadius, cs.boxShadow, icon].join('|');
+    if (key === this.copiedLook) { return; }
+    this.copiedLook = key;
+    const t = this.toolbar.style;
+    if (cs.backgroundColor && !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(cs.backgroundColor)) { t.backgroundColor = cs.backgroundColor; }
+    if (cs.borderTopStyle !== 'none' && parseFloat(cs.borderTopWidth) > 0) {
+      t.border = `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}`;
+    }
+    if (cs.borderRadius) { t.borderRadius = cs.borderRadius; }
+    if (cs.boxShadow && cs.boxShadow !== 'none') { t.boxShadow = cs.boxShadow; }
+    if (icon) { t.setProperty('--oict-ui-text', icon); }
+  }
+
   /** Whether the toolbar should be visible right now (same rules the Text web part uses). */
   private refreshShown(): void {
     const c = this.root.classList;
@@ -611,6 +650,7 @@ export class RichTextEditor {
     let height = '';
     let stack: boolean;
     if (bar) {
+      this.copyToolbarLook(bar);
       const r = bar.getBoundingClientRect();
       this.lastBar = { left: r.left - rootBox.left, right: r.right - rootBox.left, top: r.top - rootBox.top, height: r.height };
     }
@@ -785,6 +825,7 @@ export class RichTextEditor {
     this.closePopover();
     const doc = this.root.ownerDocument;
     const pop = this.el('div', `oict-pop oict-layer ${extraClass}`);
+    this.copyThemeVars(pop);
     pop.appendChild(content);
     pop.addEventListener('keydown', (ev: KeyboardEvent) => this.onMenuKey(ev));
     doc.body.appendChild(pop);
@@ -850,6 +891,7 @@ export class RichTextEditor {
     if (this.flyoutOwner === owner && this.flyout) { return; }
     this.closeFlyout();
     const fly = this.el('div', 'oict-pop oict-layer oict-flyout');
+    this.copyThemeVars(fly);
     fly.appendChild(content);
     fly.addEventListener('keydown', (ev: KeyboardEvent) => {
       if (ev.key === 'ArrowLeft' || ev.key === 'Escape') {
@@ -1031,7 +1073,11 @@ export class RichTextEditor {
     ]));
     menu.appendChild(this.el('div', 'oict-divider'));
 
-    const tableItems: HTMLElement[] = e.isActive('table') ? [this.menuItem({ label: 'ตาราง', icon: 'table', panel: () => this.tableOpsPanel() })] : [];
+    const tableItems: HTMLElement[] = e.isActive('table') ? [
+      this.menuItem({ label: 'ตาราง', icon: 'table', panel: () => this.tableOpsPanel() }),
+      this.menuItem({ label: 'รูปแบบตาราง', icon: 'table', panel: () => this.tableStylePanel() }),
+      this.menuItem({ label: 'จัดตำแหน่งตาราง', icon: 'alignCenter', panel: () => this.tableAlignPanel() })
+    ] : [];
     menu.appendChild(this.group('ย่อหน้า', [
       this.menuItem({
         label: 'คำพูด', icon: 'quote', checked: () => e.isActive('blockquote'),
@@ -1368,6 +1414,247 @@ export class RichTextEditor {
     return wrap;
   }
 
+  /** Table styles like the Text web part: simple ones and ones in the site's theme colour. */
+  private tableStylePanel(): HTMLElement {
+    const e = this.editor;
+    const current = (e.getAttributes('table').tableStyle as string) || '';
+    const wrap = this.el('div', 'oict-menu');
+    const section = (title: string, styles: Array<[string, string]>): void => {
+      wrap.appendChild(this.el('div', 'oict-section', title));
+      const grid = this.el('div', 'oict-tstyle-grid');
+      for (const [value, label] of styles) {
+        const tile = this.el('div', `oict-tstyle${value === current ? ' is-on' : ''}`);
+        tile.setAttribute('role', 'button');
+        tile.setAttribute('tabindex', '0');
+        tile.setAttribute('aria-label', label);
+        tile.title = label;
+        const rows = '<tr><td></td><td></td><td></td></tr>'.repeat(4);
+        tile.innerHTML = `<div class="oict-content"><table${value ? ` data-table-style="${value}"` : ''}><tbody>${rows}</tbody></table></div><span>${esc(label)}</span>`;
+        const pick = (): void => {
+          this.closePopover();
+          e.chain().focus().updateAttributes('table', { tableStyle: value || null }).run();
+        };
+        tile.addEventListener('mousedown', (ev: MouseEvent) => ev.preventDefault());
+        tile.addEventListener('click', pick);
+        tile.addEventListener('keydown', (ev: KeyboardEvent) => {
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); }
+        });
+        grid.appendChild(tile);
+      }
+      wrap.appendChild(grid);
+    };
+    section('แบบธรรมดา', TABLE_STYLES.slice(0, 4));
+    section('แบบสีธีม', TABLE_STYLES.slice(4));
+    return wrap;
+  }
+
+  /** Positions the whole table in the web part, like the Text web part's table alignment buttons. */
+  private tableAlignPanel(): HTMLElement {
+    const e = this.editor;
+    const current = (e.getAttributes('table').align as string) || '';
+    const wrap = this.el('div', 'oict-menu');
+    const items: Array<[string, string, string]> = [
+      ['', 'เต็มความกว้าง', 'justify'], ['left', 'ชิดซ้าย', 'alignLeft'], ['center', 'กึ่งกลาง', 'alignCenter'], ['right', 'ชิดขวา', 'alignRight']
+    ];
+    for (const [value, label, icon] of items) {
+      wrap.appendChild(this.menuItem({
+        label, icon, checked: () => current === value,
+        run: () => e.chain().focus().updateAttributes('table', { align: value || null }).run()
+      }));
+    }
+    return wrap;
+  }
+
+  // ---------- pasted / dropped images ----------
+
+  private statusEl: HTMLElement | undefined;
+  private statusTimer: number | undefined;
+
+  /** Small notice near the web part (upload progress or a problem). */
+  private showStatus(text: string, hideAfter: number = 0): void {
+    const doc = this.root.ownerDocument;
+    if (!this.statusEl) {
+      this.statusEl = this.el('div', 'oict-layer oict-upload-status');
+      this.statusEl.setAttribute('role', 'status');
+      doc.body.appendChild(this.statusEl);
+    }
+    this.statusEl.textContent = text;
+    const box = this.root.getBoundingClientRect();
+    this.statusEl.style.left = `${Math.round(Math.max(8, box.left + 8))}px`;
+    this.statusEl.style.top = `${Math.round(Math.min(window.innerHeight - 48, Math.max(this.visibleTop() + 8, box.top + 8)))}px`;
+    window.clearTimeout(this.statusTimer);
+    if (hideAfter) { this.statusTimer = window.setTimeout(() => this.hideStatus(), hideAfter); }
+  }
+
+  private hideStatus(): void {
+    window.clearTimeout(this.statusTimer);
+    if (this.statusEl) { this.statusEl.remove(); this.statusEl = undefined; }
+  }
+
+  private static readonly MAX_IMAGE_BYTES: number = 10 * 1024 * 1024;
+
+  /** Handles image files from paste or drop. Returns true when the event was taken over. */
+  private handleImageFiles(files: File[], pos: number | undefined, event: Event): boolean {
+    const images = files.filter(f => /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(f.type));
+    if (!images.length) { return false; }
+    event.preventDefault();
+    const upload = this.options.uploadImage;
+    if (!upload) {
+      this.showStatus('วางรูปได้เมื่อใช้งานบน SharePoint (รูปจะถูกอัปโหลดเข้า Site Assets)', 4000);
+      return true;
+    }
+    const run = async (): Promise<void> => {
+      let at = pos;
+      for (let i = 0; i < images.length; i++) {
+        const file = images[i];
+        if (file.size > RichTextEditor.MAX_IMAGE_BYTES) {
+          this.showStatus(`รูป ${file.name || ''} ใหญ่เกิน 10 MB`, 5000);
+          continue;
+        }
+        this.showStatus(images.length > 1 ? `กำลังอัปโหลดรูป ${i + 1}/${images.length}…` : 'กำลังอัปโหลดรูป…');
+        const src = await upload(file);
+        if (!isSafeImageSrc(src)) { throw new Error('ที่อยู่รูปที่ได้ไม่ถูกต้อง'); }
+        const node = { type: 'image', attrs: { src } };
+        if (typeof at === 'number' && at <= this.editor.state.doc.content.size) {
+          this.editor.chain().focus().insertContentAt(at, node).run();
+          at = undefined;
+        } else {
+          this.editor.chain().focus().insertContent(node).run();
+        }
+      }
+      this.hideStatus();
+    };
+    run().catch((err: Error) => this.showStatus(`อัปโหลดรูปไม่สำเร็จ: ${err && err.message ? err.message : err}`, 6000));
+    return true;
+  }
+
+  // ---------- image toolbar (align, size, alt text, delete) ----------
+
+  private imageBar: HTMLElement | undefined;
+  private imageBarPos: number = -1;
+
+  private selectedImage(): { pos: number; dom: HTMLElement; attrs: Record<string, unknown> } | undefined {
+    const sel = this.editor.state.selection;
+    if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image') { return undefined; }
+    const dom = this.editor.view.nodeDOM(sel.from) as HTMLElement | null;
+    return dom ? { pos: sel.from, dom, attrs: sel.node.attrs } : undefined;
+  }
+
+  /** Shows the small image toolbar above a selected image, like the Text web part. */
+  private refreshImageBar(): void {
+    const img = this.editing || this.editor.isFocused ? this.selectedImage() : undefined;
+    if (!img) {
+      if (this.imageBar) { this.imageBar.remove(); this.imageBar = undefined; this.imageBarPos = -1; }
+      return;
+    }
+    if (!this.imageBar || this.imageBarPos !== img.pos) {
+      if (this.imageBar) { this.imageBar.remove(); }
+      this.imageBar = this.buildImageBar();
+      this.copyThemeVars(this.imageBar);
+      this.root.ownerDocument.body.appendChild(this.imageBar);
+      this.imageBarPos = img.pos;
+    }
+    const align = (img.attrs.align as string) || '';
+    const width = (img.attrs.width as string) || '';
+    this.imageBar.querySelectorAll('[data-align]').forEach(b => b.classList.toggle('is-active', b.getAttribute('data-align') === align));
+    this.imageBar.querySelectorAll('[data-width]').forEach(b => b.classList.toggle('is-active', b.getAttribute('data-width') === width));
+    this.placeImageBar(img.dom);
+  }
+
+  private placeImageBar(dom: HTMLElement): void {
+    if (!this.imageBar) { return; }
+    const r = dom.getBoundingClientRect();
+    const h = this.imageBar.offsetHeight || 38;
+    const w = this.imageBar.offsetWidth || 300;
+    let top = r.top - h - 8;
+    if (top < this.visibleTop() + 4) { top = Math.min(window.innerHeight - h - 8, r.bottom + 8); }
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - 8 - w));
+    this.imageBar.style.left = `${Math.round(left)}px`;
+    this.imageBar.style.top = `${Math.round(top)}px`;
+  }
+
+  private buildImageBar(): HTMLElement {
+    const e = this.editor;
+    const bar = this.el('div', 'oict-layer oict-imgbar');
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'รูปภาพ');
+    const add = (html: string, title: string, run: () => void, attr?: [string, string]): HTMLButtonElement => {
+      const b = this.button('oict-btn', html, run);
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      if (attr) { b.setAttribute(attr[0], attr[1]); }
+      b.addEventListener('mousedown', (ev: MouseEvent) => ev.preventDefault());
+      bar.appendChild(b);
+      return b;
+    };
+    const setAttr = (attrs: Record<string, unknown>): void => {
+      const img = this.selectedImage();
+      if (!img) { return; }
+      const tr = e.state.tr.setNodeMarkup(img.pos, undefined, { ...img.attrs, ...attrs });
+      e.view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, img.pos)));
+    };
+    const toggleAlign = (v: string): void => {
+      const img = this.selectedImage();
+      setAttr({ align: img && img.attrs.align === v ? null : v });
+    };
+    add(svg('alignLeft'), 'จัดชิดซ้าย (ข้อความล้อมรอบ)', () => toggleAlign('left'), ['data-align', 'left']);
+    add(svg('alignCenter'), 'จัดกึ่งกลาง', () => toggleAlign('center'), ['data-align', 'center']);
+    add(svg('alignRight'), 'จัดชิดขวา (ข้อความล้อมรอบ)', () => toggleAlign('right'), ['data-align', 'right']);
+    bar.appendChild(this.el('span', 'oict-sep'));
+    for (const w of ['25%', '50%', '75%', '100%']) {
+      add(esc(w), `ความกว้าง ${w}`, () => setAttr({ width: w }), ['data-width', w]);
+    }
+    add('ขนาดจริง', 'ขนาดจริงของรูป', () => setAttr({ width: null }), ['data-width', '']);
+    bar.appendChild(this.el('span', 'oict-sep'));
+    const altBtn = add(svg('alt'), 'ข้อความแทนรูป', () => this.openAltPanel(altBtn));
+    add(svg('trash'), 'ลบรูป', () => { e.chain().focus().deleteSelection().run(); });
+    return bar;
+  }
+
+  private openAltPanel(anchor: HTMLElement): void {
+    const img = this.selectedImage();
+    if (!img) { return; }
+    const pos = img.pos;
+    const panel = this.el('div', '');
+    panel.innerHTML = `<h3>ข้อความแทนรูป</h3>
+      <label for="oict-alt-input">อธิบายรูปนี้สำหรับโปรแกรมอ่านหน้าจอ</label>
+      <input id="oict-alt-input" type="text" autocomplete="off" />
+      <div class="oict-actions"><button type="button" class="oict-primary" data-act="save">บันทึก</button><button type="button" data-act="cancel">ยกเลิก</button></div>`;
+    const input = panel.querySelector('input') as HTMLInputElement;
+    input.value = (img.attrs.alt as string) || '';
+    const save = (): void => {
+      const node = this.editor.state.doc.nodeAt(pos);
+      this.closePopover();
+      if (node && node.type.name === 'image') {
+        const tr = this.editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, alt: input.value.trim() || null });
+        this.editor.view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)));
+      }
+      this.editor.commands.focus();
+    };
+    panel.addEventListener('click', (ev: MouseEvent) => {
+      const act = (ev.target as HTMLElement).getAttribute('data-act');
+      if (act === 'save') { save(); }
+      if (act === 'cancel') { this.closePopover(); this.editor.commands.focus(); }
+    });
+    input.addEventListener('keydown', (ev: KeyboardEvent) => { if (ev.key === 'Enter') { ev.preventDefault(); save(); } });
+    this.openPopover(anchor, panel, 'oict-link', false);
+    input.focus();
+  }
+
+  /** Theme colours (set by the web part on its own element) for elements drawn on the page's top layer. */
+  private copyThemeVars(el: HTMLElement): void {
+    const cs = window.getComputedStyle(this.root);
+    for (const name of RichTextEditor.THEME_VARS) {
+      const v = cs.getPropertyValue(name).trim();
+      if (v) { el.style.setProperty(name, v); }
+    }
+  }
+
+  private static readonly THEME_VARS: string[] = [
+    '--oict-link', '--oict-theme', '--oict-theme-light', '--oict-theme-lighter', '--oict-theme-text',
+    '--oict-border', '--oict-subtle', '--oict-neutral-bg', '--oict-neutral-bg2'
+  ];
+
   // ---------- image dialog ----------
 
   private openImagePanel(): void {
@@ -1377,7 +1664,7 @@ export class RichTextEditor {
       <h3>แทรกรูปภาพ</h3>
       <label for="oict-img-src">ที่อยู่รูปภาพ</label>
       <input id="oict-img-src" type="text" autocomplete="off" placeholder="https://… หรือ /sites/…/SiteAssets/รูป.png" />
-      <div class="oict-hint" style="margin-left:0">อัปโหลดรูปไว้ใน Site Assets ของไซต์ แล้วคัดลอกลิงก์ของรูปมาวาง</div>
+      <div class="oict-hint" style="margin-left:0">หรือก็อปรูปแล้ววาง (Ctrl+V) / ลากรูปมาวางในข้อความได้เลย ระบบจะอัปโหลดเข้า Site Assets ให้</div>
       <label for="oict-img-alt">ข้อความแทนรูป (สำหรับโปรแกรมอ่านหน้าจอ)</label>
       <input id="oict-img-alt" type="text" autocomplete="off" />
       <label for="oict-img-width">ความกว้าง</label>
@@ -1637,5 +1924,71 @@ export function renderView(host: HTMLElement, html: string): void {
   const view = host.ownerDocument.createElement('div');
   view.className = 'oict oict-content';
   view.innerHTML = sanitizeHtml(html);
+  addHeadingAnchors(view, host);
   host.replaceChildren(view);
+  scrollToHash(view);
+}
+
+/** Address-friendly id from heading text (keeps Thai and other letters). */
+function anchorSlug(text: string): string {
+  const slug = text.trim().toLowerCase()
+    .replace(/[\s!-,./:-@[-^`{-~\u00a0\u2000-\u206f\u3000-\u303f]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return slug || 'heading';
+}
+
+/**
+ * Page anchors for Heading 1-3, like the Text web part: each heading gets an id, and hovering it
+ * shows a link symbol that copies the link to that section.
+ */
+function addHeadingAnchors(view: HTMLElement, host: HTMLElement): void {
+  const doc = view.ownerDocument;
+  const used: { [id: string]: boolean } = {};
+  view.querySelectorAll('h1, h2, h3').forEach((node: Element) => {
+    const h = node as HTMLElement;
+    const text = (h.textContent || '').trim();
+    if (!text) { return; }
+    const base = anchorSlug(text);
+    let id = base;
+    for (let n = 1; used[id] || (doc.getElementById(id) && !host.contains(doc.getElementById(id))); n++) {
+      id = `${base}-${n}`;
+    }
+    used[id] = true;
+    h.id = id;
+    const a = doc.createElement('a');
+    a.className = 'oict-anchor';
+    a.href = `#${encodeURIComponent(id)}`;
+    a.setAttribute('data-interception', 'off');
+    a.setAttribute('aria-label', `คัดลอกลิงก์ไปยัง ${text}`);
+    a.title = 'คัดลอกลิงก์ไปยังส่วนนี้';
+    a.innerHTML = svg('link');
+    a.addEventListener('click', (ev: MouseEvent) => {
+      ev.preventDefault();
+      const url = `${window.location.href.split('#')[0]}#${encodeURIComponent(id)}`;
+      try { window.history.replaceState(window.history.state, '', url); } catch { /* not allowed: ignore */ }
+      h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const done = (): void => {
+        const tip = doc.createElement('span');
+        tip.className = 'oict-anchor-tip';
+        tip.textContent = 'คัดลอกลิงก์แล้ว';
+        a.appendChild(tip);
+        window.setTimeout(() => tip.remove(), 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(() => undefined);
+      }
+    });
+    h.appendChild(a);
+  });
+}
+
+/** Opening a page with #section: the web part renders after the browser looked for it, so scroll now. */
+function scrollToHash(view: HTMLElement): void {
+  let id = '';
+  try { id = decodeURIComponent(window.location.hash.slice(1)); } catch { return; }
+  if (!id) { return; }
+  const list = Array.from(view.querySelectorAll('h1[id], h2[id], h3[id]'));
+  const target = list.find(h => h.id === id);
+  if (target) { window.setTimeout(() => target.scrollIntoView({ block: 'start' }), 300); }
 }

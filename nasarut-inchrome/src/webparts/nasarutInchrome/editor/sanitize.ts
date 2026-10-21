@@ -22,7 +22,9 @@ const DATA_VALUES: { [attr: string]: RegExp } = {
   'data-space-before': /^true$/,
   'data-space-after': /^true$/,
   'data-quote-style': /^(intense|boxed|side|icon)$/,
-  'data-color': /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i
+  'data-color': /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i,
+  'data-align': /^(left|center|right)$/,
+  'data-table-style': /^(minimal|banded|header|theme-header|theme-banded|theme-lines|theme-accent)$/
 };
 
 let hooksInstalled: boolean = false;
