@@ -9,11 +9,16 @@
 
 ## 1.2.3.0 — 21/10/2026 (เวอร์ชันปัจจุบัน)
 
-**อัปเดตจาก ZIP ใน GitHub**
+**ปรับปรุง Toolbar ให้ทำงานร่วมกับ SharePoint**
 
-- นำ Source Code ชุดล่าสุดจาก `Nasarut-inchrome-repo.zip` มาอัปเดตและ Build ใหม่
+- ปรับ Toolbar ของ Web Part ให้ตรวจสถานะการแสดงผลของ Toolbar SharePoint และแสดง/ซ่อนตามกันเมื่อผู้ใช้เลือกหรือเลื่อนเมาส์ผ่าน Web Part
+- เพิ่มการติดตามเหตุการณ์และการเปลี่ยนแปลง DOM เพื่อจัดตำแหน่ง Toolbar ให้สัมพันธ์กับ SharePoint และหยุดการติดตามเมื่อปิด Editor
+- ปรับชั้นการแสดงผลของเมนูและ Flyout เพื่อไม่ให้ถูกองค์ประกอบอื่นบนหน้า SharePoint บัง
+- คงความสามารถ Rich Text Editor, การวางข้อความ และลิงก์เปิดด้วย Chrome เดิมไว้
 - รักษา Solution ID, Feature ID และ Web Part ID เดิมสำหรับอัปเกรดแอป
-- ไฟล์ที่เปลี่ยน: `README.md`, `nasarut-inchrome/src/webparts/nasarutInchrome/editor/styles.ts`, `nasarut-inchrome/src/webparts/nasarutInchrome/editor/RichTextEditor.ts`, `nasarut-inchrome/config/package-solution.json`
+- Build แพ็กเกจ `dist/Nasarut-inchrome.sppkg` สำเร็จจาก GitHub Actions
+
+**ข้อควรทดสอบบน SharePoint จริง:** การแสดง/ซ่อน Toolbar บนหน้าจอแคบหรือหลายคอลัมน์ และประสิทธิภาพเมื่อมี Web Part หลายตัว
 
 ## 1.2.2.0 — 21/10/2026
 
