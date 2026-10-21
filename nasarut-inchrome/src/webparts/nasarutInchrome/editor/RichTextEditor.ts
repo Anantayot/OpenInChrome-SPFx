@@ -189,23 +189,50 @@ export class RichTextEditor {
   private painting: boolean = false;
   private readonly onDocMouseDown = (e: MouseEvent): void => {
     const t = e.target as Element;
-    // Clicking into this web part makes it the one being edited, even if SharePoint keeps focus elsewhere.
-    if (t && this.root.contains(t)) { RichTextEditor.activate(this); }
+    // Clicking into this web part makes it the one being edited, even if SharePoint moves focus elsewhere.
+    if (t && this.root.contains(t)) {
+      RichTextEditor.activate(this);
+      this.editing = true;
+    }
     if ((this.popover || this.flyout) && !(this.popover && this.popover.contains(t)) && !(this.flyout && this.flyout.contains(t)) &&
         !t.closest?.('[data-oict-pop-anchor]')) {
       this.closePopover();
     }
-    // A click in another web part ends editing here even if SharePoint keeps focus where it was,
-    // so the toolbar does not stay up (stuck at the top) next to the other web part's toolbar.
-    // Clicks on a scrollbar or empty page area (an ancestor of this web part) are left to the focus logic.
-    if (this.root.classList.contains('is-focused') && t && !this.root.contains(t) && !this.toolbar.contains(t) &&
-        !t.contains?.(this.root) && !(this.popover && this.popover.contains(t)) && !(this.flyout && this.flyout.contains(t)) &&
-        !t.closest?.('.oict-cd-backdrop, .oict-ld-backdrop')) {
-      window.clearTimeout(this.blurTimer);
-      this.root.classList.remove('is-focused');
-      this.placeToolbar();
+    // A click anywhere else (another web part, empty page area) ends editing here, whatever SharePoint
+    // does with focus, so the toolbar never stays up for a web part that is not being edited.
+    // Only a click on the page's scrollbar keeps editing.
+    if ((this.editing || this.root.classList.contains('is-focused')) && t && !this.root.contains(t) && !this.toolbar.contains(t) &&
+        !(this.popover && this.popover.contains(t)) && !(this.flyout && this.flyout.contains(t)) &&
+        !t.closest?.('.oict-cd-backdrop, .oict-ld-backdrop') && !RichTextEditor.isScrollbarClick(e)) {
+      this.endEditing();
     }
   };
+  /** True when the mouse went down on an element's own scrollbar (not on its content). */
+  private static isScrollbarClick(e: MouseEvent): boolean {
+    const el = e.target as HTMLElement;
+    if (!el || typeof el.clientWidth !== 'number') { return false; }
+    const docEl = el.ownerDocument ? el.ownerDocument.documentElement : undefined;
+    if (el === docEl || (el.ownerDocument && el === el.ownerDocument.body)) {
+      return e.clientX >= (docEl ? docEl.clientWidth : window.innerWidth) || e.clientY >= (docEl ? docEl.clientHeight : window.innerHeight);
+    }
+    const r = el.getBoundingClientRect();
+    const x = e.clientX - r.left - el.clientLeft;
+    const y = e.clientY - r.top - el.clientTop;
+    if ((el.offsetWidth - el.clientWidth > 2 && x >= el.clientWidth) || (el.offsetHeight - el.clientHeight > 2 && y >= el.clientHeight)) {
+      return true;
+    }
+    // Overlay scrollbars take no space: treat the last 18px along a scrollable edge as the scrollbar.
+    return (el.scrollHeight > el.clientHeight + 1 && x >= r.width - 18) || (el.scrollWidth > el.clientWidth + 1 && y >= r.height - 18);
+  }
+
+  /** Editing here is over: hide the toolbar (unless SharePoint still shows its own toolbar for this web part). */
+  private endEditing(): void {
+    this.editing = false;
+    window.clearTimeout(this.blurTimer);
+    this.root.classList.remove('is-focused');
+    this.placeToolbar();
+  }
+
   private readonly onEditorMouseUp = (): void => {
     if (this.painting && !this.editor.state.selection.empty) {
       this.pasteFormat();
@@ -343,6 +370,7 @@ export class RichTextEditor {
     const onFocusIn = (): void => {
       window.clearTimeout(this.blurTimer);
       RichTextEditor.activate(this);
+      this.editing = true;
       this.root.classList.add('is-focused');
       this.placeToolbar();
     };
@@ -366,6 +394,7 @@ export class RichTextEditor {
     doc.addEventListener('mouseover', this.onSyncTrigger, true);
     doc.addEventListener('mousedown', this.onSyncTrigger, true);
     doc.addEventListener('focusin', this.onSyncTrigger, true);
+    doc.addEventListener('focusin', this.onDocFocusIn, true);
     doc.addEventListener('keyup', this.onSyncTrigger, true);
     doc.addEventListener('transitionrun', this.onSyncTrigger, true);
     doc.addEventListener('transitionend', this.onSyncTrigger, true);
@@ -398,12 +427,15 @@ export class RichTextEditor {
 
   /** Another web part is being edited now: drop editing state here and hide the toolbar. */
   private deactivate(): void {
-    window.clearTimeout(this.blurTimer);
     this.closePopover();
-    window.clearTimeout(this.blurTimer);
-    this.root.classList.remove('is-focused');
-    this.placeToolbar();
+    this.endEditing();
   }
+
+  /**
+   * This web part is being edited (clicked or focused, and nothing else clicked since). Kept apart from
+   * DOM focus, because SharePoint may move focus to its own wrappers while the web part stays selected.
+   */
+  private editing: boolean = false;
 
   private syncObserver: MutationObserver | undefined;
   private syncFrame: number = 0;
@@ -434,11 +466,25 @@ export class RichTextEditor {
     this.placeToolbar();
   };
 
+  /** Keyboard focus moved to something else on the page (Tab, another field): editing here is over. */
+  private readonly onDocFocusIn = (e: FocusEvent): void => {
+    const t = e.target as Element;
+    if (!this.editing || !t || t.nodeType !== 1) { return; }
+    const doc = this.root.ownerDocument;
+    if (t === doc.body || t === doc.documentElement || this.root.contains(t) || this.toolbar.contains(t) ||
+        t.contains(this.root) || (this.popover && this.popover.contains(t)) || (this.flyout && this.flyout.contains(t)) ||
+        t.closest('.oict-cd-backdrop, .oict-ld-backdrop')) {
+      return;
+    }
+    this.endEditing();
+  };
+
   private stopSync(): void {
     const doc = this.root.ownerDocument;
     doc.removeEventListener('mouseover', this.onSyncTrigger, true);
     doc.removeEventListener('mousedown', this.onSyncTrigger, true);
     doc.removeEventListener('focusin', this.onSyncTrigger, true);
+    doc.removeEventListener('focusin', this.onDocFocusIn, true);
     doc.removeEventListener('keyup', this.onSyncTrigger, true);
     doc.removeEventListener('transitionrun', this.onSyncTrigger, true);
     doc.removeEventListener('transitionend', this.onSyncTrigger, true);
@@ -547,7 +593,7 @@ export class RichTextEditor {
   private refreshShown(): void {
     const c = this.root.classList;
     const mine = RichTextEditor.activeEditor === this;
-    const shown = !this.offscreen && ((mine && c.contains('is-focused')) || c.contains('is-selected') || (mine && c.contains('has-popover')) ||
+    const shown = !this.offscreen && ((mine && (this.editing || c.contains('is-focused'))) || c.contains('is-selected') || (mine && c.contains('has-popover')) ||
       this.toolbarHover || (!this.joined && this.rootHover));
     this.toolbar.classList.toggle('oict-shown', shown);
   }
@@ -584,7 +630,7 @@ export class RichTextEditor {
       if (stack) { left = rootBox.left; top = rootBox.top - h - 56; }
     }
     this.root.classList.toggle('oict-stack', stack);
-    const editing = RichTextEditor.activeEditor === this && (this.root.classList.contains('is-focused') || !!this.popover);
+    const editing = RichTextEditor.activeEditor === this && (this.editing || this.root.classList.contains('is-focused') || !!this.popover);
     const boundary = this.visibleTop();
     let stuck = false;
     this.offscreen = false;
