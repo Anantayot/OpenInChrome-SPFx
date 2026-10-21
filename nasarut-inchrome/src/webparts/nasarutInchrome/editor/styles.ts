@@ -7,7 +7,7 @@ const CSS: string = `
 .oict-content h3{font-size:20px;font-weight:600;margin:.4em 0 .3em;line-height:1.3}
 .oict-content h4{font-size:16px;font-weight:600;margin:.4em 0 .3em;line-height:1.3}
 .oict-content ul,.oict-content ol{margin:0 0 .6em;padding-left:1.6em}
-.oict-content li{margin:.15em 0}
+.oict-content li{margin:.15em 0 .45em}
 .oict-content li>p{margin:0}
 .oict-content blockquote{margin:.4em 0;padding:.2em 0 .2em 1em;border-left:3px solid #c8c6c4;color:#605e5c;font-style:italic}
 .oict-content pre{font-family:Consolas,Menlo,monospace;background:#f3f2f1;padding:8px 10px;border-radius:4px;white-space:pre-wrap}
