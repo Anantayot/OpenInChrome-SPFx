@@ -74,7 +74,8 @@ jobs:
                       or not (info.filename == 'README.md'
                               or info.filename.startswith('nasarut-inchrome/')
                               or info.filename.startswith('dist/')
-                              or info.filename.startswith('.github/'))):
+                              or info.filename.startswith('.github/')
+                              or info.filename == 'CHANGELOG.md')):
                       raise SystemExit('Unsafe or unexpected path: '+info.filename)
                   if stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK:
                       raise SystemExit('Symlink in ZIP: '+info.filename)
