@@ -1,9 +1,9 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
   "solution": {
-    "name": "open-in-chrome-text-client-side-solution",
-    "id": "85c40296-c6c5-4c19-894a-cddf803fbcb2",
-    "version": "1.0.0.0",
+    "name": "Nasarut-inchrome",
+    "id": "968f0272-ec25-46a0-a351-6f35299b8d24",
+    "version": "1.1.0.0",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": false,
     "isDomainIsolated": false,
@@ -16,10 +16,10 @@
     },
     "metadata": {
       "shortDescription": {
-        "default": "Text web part with optional open-in-Chrome links"
+        "default": "Nasarut-inchrome: Text web part with optional open-in-Chrome links"
       },
       "longDescription": {
-        "default": "Rich text web part. Links can be set to open through the nasarut-inchrome-chrome: protocol."
+        "default": "Rich text web part. Each link can be set to open in Google Chrome through the nasarut-inchrome-chrome: protocol."
       },
       "screenshotPaths": [],
       "videoUrl": "",
@@ -27,14 +27,14 @@
     },
     "features": [
       {
-        "title": "open-in-chrome-text Feature",
-        "description": "The feature that activates elements of the open-in-chrome-text solution.",
-        "id": "4d61b687-cfa6-4f50-ba21-10bccabfc321",
-        "version": "1.0.0.0"
+        "title": "Nasarut-inchrome Feature",
+        "description": "Activates the Nasarut-inchrome web part.",
+        "id": "920d0ed3-0a19-41e4-9d44-82c40c02cc02",
+        "version": "1.1.0.0"
       }
     ]
   },
   "paths": {
-    "zippedPackage": "solution/open-in-chrome-text.sppkg"
+    "zippedPackage": "solution/nasarut-inchrome.sppkg"
   }
 }

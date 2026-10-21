@@ -6,7 +6,7 @@ import type { IReadonlyTheme } from '@microsoft/sp-component-base';
 import { RichTextEditor, renderView } from './editor/RichTextEditor';
 import { sanitizeHtml } from './editor/sanitize';
 
-export interface IOpenInChromeTextWebPartProps {
+export interface INasarutInchromeWebPartProps {
   html: string;
 }
 
@@ -18,7 +18,7 @@ export interface IOpenInChromeTextWebPartProps {
  * SharePoint does not strip the nasarut-inchrome-chrome: links. It is always
  * sanitized before it is saved or shown.
  */
-export default class OpenInChromeTextWebPart extends BaseClientSideWebPart<IOpenInChromeTextWebPartProps> {
+export default class NasarutInchromeWebPart extends BaseClientSideWebPart<INasarutInchromeWebPartProps> {
 
   private editor: RichTextEditor | undefined;
 

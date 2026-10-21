@@ -1,0 +1,31 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "212a363a-17f4-4bde-98e0-3e855aa31402",
+  "alias": "NasarutInchromeWebPart",
+  "componentType": "WebPart",
+  "version": "*",
+  "manifestVersion": 2,
+  "requiresCustomScript": false,
+  "supportedHosts": [
+    "SharePointWebPart"
+  ],
+  "supportsThemeVariants": true,
+  "preconfiguredEntries": [
+    {
+      "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
+      "group": {
+        "default": "Advanced"
+      },
+      "title": {
+        "default": "Nasarut-inchrome"
+      },
+      "description": {
+        "default": "ข้อความแบบ Text ที่เลือกได้ว่าลิงก์ไหนเปิดด้วย Chrome"
+      },
+      "officeFabricIconFontName": "TextDocument",
+      "properties": {
+        "html": ""
+      }
+    }
+  ]
+}

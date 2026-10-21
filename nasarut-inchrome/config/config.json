@@ -1,0 +1,16 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "nasarut-inchrome-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/nasarutInchrome/NasarutInchromeWebPart.js",
+          "manifest": "./src/webparts/nasarutInchrome/NasarutInchromeWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {}
+}

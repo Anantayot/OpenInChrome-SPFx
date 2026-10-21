@@ -1,23 +1,23 @@
 {
   "@microsoft/generator-sharepoint": {
     "whichFolder": "subdir",
-    "solutionName": "open-in-chrome-text",
+    "solutionName": "nasarut-inchrome",
     "environment": "spo",
     "packageManager": "npm",
     "useGulp": false,
     "componentType": "webpart",
     "template": "none",
-    "componentName": "OpenInChromeText",
-    "componentDescription": "Rich text with optional open-in-Chrome links",
+    "componentName": "NasarutInchrome",
+    "componentDescription": "Text web part with optional open-in-Chrome links",
     "plusBeta": false,
     "isCreatingSolution": true,
     "nodeVersion": "22.22.0",
     "sdksVersions": {},
     "version": "1.22.2",
-    "libraryName": "open-in-chrome-text",
-    "libraryId": "85c40296-c6c5-4c19-894a-cddf803fbcb2",
-    "solutionShortDescription": "open-in-chrome-text description",
-    "skipFeatureDeployment": true,
+    "libraryName": "nasarut-inchrome",
+    "libraryId": "968f0272-ec25-46a0-a351-6f35299b8d24",
+    "solutionShortDescription": "Nasarut-inchrome",
+    "skipFeatureDeployment": false,
     "isDomainIsolated": false
   }
 }

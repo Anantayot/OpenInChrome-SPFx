@@ -1,6 +1,6 @@
 {
-  "name": "open-in-chrome-text",
-  "version": "0.0.1",
+  "name": "nasarut-inchrome",
+  "version": "1.1.0",
   "private": true,
   "engines": {
     "node": ">=22.14.0 < 23.0.0"

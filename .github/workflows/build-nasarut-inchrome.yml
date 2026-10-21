@@ -1,18 +1,18 @@
-name: Build Text (Open in Chrome) web part
+name: Build Nasarut-inchrome
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'open-in-chrome-text/**'
-      - '.github/workflows/build-open-in-chrome-text.yml'
+      - 'nasarut-inchrome/**'
+      - '.github/workflows/build-nasarut-inchrome.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: build-open-in-chrome-text
+  group: build-nasarut-inchrome
   cancel-in-progress: false
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: open-in-chrome-text
+        working-directory: nasarut-inchrome
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: open-in-chrome-text/package-lock.json
+          cache-dependency-path: nasarut-inchrome/package-lock.json
 
       - name: Install exact dependencies from package-lock.json
         run: npm ci --no-audit --no-fund
@@ -46,20 +46,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Nasarut-inchrome-sppkg
-          path: open-in-chrome-text/sharepoint/solution/open-in-chrome-text.sppkg
+          path: nasarut-inchrome/sharepoint/solution/nasarut-inchrome.sppkg
           if-no-files-found: error
 
       - name: Commit built package to dist/
         working-directory: .
         run: |
           mkdir -p dist
-          cp open-in-chrome-text/sharepoint/solution/open-in-chrome-text.sppkg dist/Nasarut-inchrome.sppkg
+          cp nasarut-inchrome/sharepoint/solution/nasarut-inchrome.sppkg dist/Nasarut-inchrome.sppkg
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f dist/Nasarut-inchrome.sppkg
-          if ! git diff --cached --quiet; then
-            git commit -m "Build Nasarut-inchrome.sppkg"
-            git push origin HEAD:main
-          else
+          if git diff --cached --quiet; then
             echo "Package unchanged"
+            exit 0
           fi
+          git commit -m "Build Nasarut-inchrome.sppkg"
+          git pull --rebase origin main
+          git push origin HEAD:main
