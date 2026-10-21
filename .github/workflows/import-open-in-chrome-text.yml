@@ -1,0 +1,74 @@
+name: Import provided Text (Open in Chrome) ZIP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-open-in-chrome-text.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Verify ZIP contents and existing paths
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from collections import Counter
+          archive=Path("OpenInChromeText-repo-files.zip")
+          with ZipFile(archive) as z:
+              all_names=[i.filename for i in z.infolist()]
+              files=[name for name in all_names if not name.endswith("/")]
+              counts=Counter(files)
+              dupes=[n for n,v in counts.items() if v>1]
+              assert not dupes, f"Duplicate ZIP paths: {dupes}"
+              for name in files:
+                  parts=Path(name).parts
+                  assert not name.startswith("/") and ".." not in parts and "\\" not in name, f"Unsafe path: {name}"
+                  assert name.startswith("open-in-chrome-text/") or name==".github/workflows/build-open-in-chrome-text.yml", f"Unexpected file outside project: {name}"
+                  assert not Path(name).exists(), f"Refusing to overwrite existing file: {name}"
+              for name in ["open-in-chrome-text/package-lock.json", ".github/workflows/build-open-in-chrome-text.yml"]:
+                  assert name in files, f"Required file missing: {name}"
+              print(f"Validated {len(files)} files; no collisions with existing files")
+              print("Archive files:")
+              for name in files: print(name)
+          PY
+
+      - name: Extract all files unchanged and commit
+        shell: bash
+        run: |
+          unzip -q OpenInChromeText-repo-files.zip
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f open-in-chrome-text .github/workflows/build-open-in-chrome-text.yml
+          # Remove only the one-time import workflow added by the assistant.
+          git rm -f .github/workflows/import-open-in-chrome-text.yml
+          git diff --cached --name-status
+          git commit -m "Add Text (Open in Chrome) SPFx web part"
+          git push origin HEAD:main
+
+      - name: Start provided build workflow after bot commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if gh workflow run build-open-in-chrome-text.yml --ref main; then
+              echo "Triggered user-provided build workflow"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Could not dispatch user-provided build workflow" >&2
+          exit 1
