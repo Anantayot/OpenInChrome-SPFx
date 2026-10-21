@@ -35,6 +35,13 @@ export function isAllowedHref(href: string | undefined): boolean {
   return isChromeHref(href) ? isSafeChromeHref(href) : ALLOWED_ADDRESS.test(href);
 }
 
+/** Images: http/https or a site-relative address only. data: and other schemes are refused. */
+const SAFE_IMAGE_SRC: RegExp = /^(?:https?:\/\/|\/)[^\s"'<>`]+$/i;
+
+export function isSafeImageSrc(src: string): boolean {
+  return SAFE_IMAGE_SRC.test(src.trim());
+}
+
 export interface ILinkValidation {
   ok: boolean;
   href?: string;

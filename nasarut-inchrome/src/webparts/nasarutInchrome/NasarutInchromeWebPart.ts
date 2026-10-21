@@ -1,7 +1,7 @@
 import { DisplayMode, Version } from '@microsoft/sp-core-library';
 import type { IPropertyPaneConfiguration } from '@microsoft/sp-property-pane';
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
-import type { IReadonlyTheme } from '@microsoft/sp-component-base';
+import { ThemeProvider, type IReadonlyTheme } from '@microsoft/sp-component-base';
 
 import { RichTextEditor, renderView } from './editor/RichTextEditor';
 import { sanitizeHtml } from './editor/sanitize';
@@ -21,12 +21,25 @@ export interface INasarutInchromeWebPartProps {
 export default class NasarutInchromeWebPart extends BaseClientSideWebPart<INasarutInchromeWebPartProps> {
 
   private editor: RichTextEditor | undefined;
+  private themeColors: string[] | undefined;
+
+  protected onInit(): Promise<void> {
+    // Read the site theme once so the colour picker can show the site's own theme colours.
+    try {
+      const provider = this.context.serviceScope.consume(ThemeProvider.serviceKey);
+      this.applyTheme(provider.tryGetTheme());
+    } catch {
+      // Theme not available (e.g. workbench): defaults are used.
+    }
+    return Promise.resolve();
+  }
 
   public render(): void {
     if (this.displayMode === DisplayMode.Edit) {
       if (!this.editor) {
         this.editor = new RichTextEditor(this.domElement, {
           html: this.properties.html || '',
+          themeColors: this.themeColors,
           onChange: (html: string) => { this.properties.html = html; }
         });
       }
@@ -43,9 +56,18 @@ export default class NasarutInchromeWebPart extends BaseClientSideWebPart<INasar
   }
 
   protected onThemeChanged(theme: IReadonlyTheme | undefined): void {
+    this.applyTheme(theme);
+  }
+
+  private applyTheme(theme: IReadonlyTheme | undefined): void {
     const link = theme?.semanticColors?.link;
     if (link) {
       this.domElement.style.setProperty('--oict-link', link);
+    }
+    const p = theme?.palette;
+    if (p && p.themeDarker && p.themePrimary) {
+      this.themeColors = [p.themeDarker, p.themeDark, p.themeDarkAlt, p.themePrimary, p.themeSecondary, p.themeTertiary]
+        .filter((c): c is string => !!c);
     }
   }
 
