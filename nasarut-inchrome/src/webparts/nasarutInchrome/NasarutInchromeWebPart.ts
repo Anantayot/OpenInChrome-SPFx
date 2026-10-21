@@ -3,7 +3,7 @@ import type { IPropertyPaneConfiguration } from '@microsoft/sp-property-pane';
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
 import { ThemeProvider, type IReadonlyTheme } from '@microsoft/sp-component-base';
 
-import { RichTextEditor, renderView } from './editor/RichTextEditor';
+import { RichTextEditor, renderView, type ISitePage } from './editor/RichTextEditor';
 import { sanitizeHtml } from './editor/sanitize';
 
 export interface INasarutInchromeWebPartProps {
@@ -40,6 +40,7 @@ export default class NasarutInchromeWebPart extends BaseClientSideWebPart<INasar
         this.editor = new RichTextEditor(this.domElement, {
           html: this.properties.html || '',
           themeColors: this.themeColors,
+          searchPages: (query: string) => this.searchPages(query),
           onChange: (html: string) => { this.properties.html = html; }
         });
       }
@@ -86,6 +87,41 @@ export default class NasarutInchromeWebPart extends BaseClientSideWebPart<INasar
         groups: []
       }]
     };
+  }
+
+  /**
+   * Pages of this site for the Insert link dialog (read-only, same site, signed-in user's rights).
+   * Uses the site's "SitePages" library, whose address is the same in every site language.
+   */
+  private async searchPages(query: string): Promise<ISitePage[]> {
+    const web = this.context.pageContext.web;
+    const listPath = `'${web.serverRelativeUrl.replace(/\/$/, '').replace(/'/g, "''")}/SitePages'`;
+    const term = query.trim().slice(0, 100).replace(/'/g, "''");
+    const params = [
+      `@u=${encodeURIComponent(listPath)}`,
+      '$select=Title,FileRef,FileLeafRef,Modified',
+      `$orderby=${encodeURIComponent('Modified desc')}`,
+      '$top=20'
+    ];
+    if (term) {
+      params.push(`$filter=${encodeURIComponent(`substringof('${term}',Title)`)}`);
+    }
+    const response = await fetch(`${web.absoluteUrl}/_api/web/GetList(@u)/items?${params.join('&')}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json;odata=nometadata' }
+    });
+    if (!response.ok) {
+      throw new Error(`Pages request failed: ${response.status}`);
+    }
+    const data: { value?: Array<{ Title?: string; FileRef?: string; FileLeafRef?: string; Modified?: string }> } = await response.json();
+    const origin = new URL(web.absoluteUrl).origin;
+    return (data.value || [])
+      .filter(i => !!i.FileRef)
+      .map(i => ({
+        title: i.Title || (i.FileLeafRef || '').replace(/\.aspx$/i, ''),
+        url: origin + encodeURI(i.FileRef as string),
+        modified: i.Modified || ''
+      }));
   }
 
   private destroyEditor(): void {

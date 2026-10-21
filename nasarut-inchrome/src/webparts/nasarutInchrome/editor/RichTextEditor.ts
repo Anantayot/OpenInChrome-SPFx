@@ -23,8 +23,18 @@ import { buildHref, isAllowedHref, isChromeHref, isSafeImageSrc, stripChrome } f
 import { sanitizeHtml } from './sanitize';
 import { ensureStyles } from './styles';
 
+/** A page shown in the Insert link dialog. */
+export interface ISitePage {
+  title: string;
+  url: string;
+  /** ISO date. */
+  modified: string;
+}
+
 export interface IRichTextEditorOptions {
   html: string;
+  /** Finds pages on the current site for the Insert link dialog. Empty query = most recent pages. */
+  searchPages?: (query: string) => Promise<ISitePage[]>;
   placeholder?: string;
   /** Six colours from the site theme (darkest first) for the "Theme colors" row. */
   themeColors?: string[];
@@ -173,6 +183,7 @@ export class RichTextEditor {
   private resizeObserver: ResizeObserver | undefined;
   private placementChecked: boolean = false;
   private blurTimer: number | undefined;
+  private closeDialog: (() => void) | undefined;
   private painting: boolean = false;
   private readonly onDocMouseDown = (e: MouseEvent): void => {
     const t = e.target as Element;
@@ -277,6 +288,7 @@ export class RichTextEditor {
       this.options.onChange(this.getHtml());
     }
     this.closePopover();
+    if (this.closeDialog) { this.closeDialog(); }
     window.clearTimeout(this.blurTimer);
     if (this.resizeObserver) { this.resizeObserver.disconnect(); }
     this.root.ownerDocument.removeEventListener('mousedown', this.onDocMouseDown, true);
@@ -328,7 +340,7 @@ export class RichTextEditor {
     window.clearTimeout(this.blurTimer);
     this.blurTimer = window.setTimeout(() => {
       const active = this.root.ownerDocument.activeElement;
-      const inDialog = !!(active && (active as Element).closest?.('.oict-cd-backdrop'));
+      const inDialog = !!(active && (active as Element).closest?.('.oict-cd-backdrop, .oict-ld-backdrop'));
       if (!this.popover && !inDialog && !(active && this.root.contains(active))) {
         this.root.classList.remove('is-focused');
       }
@@ -1124,10 +1136,11 @@ export class RichTextEditor {
     src.focus();
   }
 
-  // ---------- link dialog ----------
+  // ---------- link dialog (laid out like the SharePoint Text "Insert link" dialog) ----------
 
   public openLinkPanel(): void {
     const e = this.editor;
+    this.closePopover();
     this.syncSelectionFromDom();
     if (e.isActive('link')) {
       e.chain().extendMarkRange('link').run();
@@ -1137,36 +1150,69 @@ export class RichTextEditor {
     const current = e.isActive('link') ? (e.getAttributes('link') as { href?: string; target?: string }) : {};
     const selectedText = e.state.doc.textBetween(from, to, ' ');
     const href = current.href || '';
+    const search = this.options.searchPages;
+    const doc = this.root.ownerDocument;
 
-    const panel = this.el('div', '');
-    panel.innerHTML = `
-      <h3>${href ? 'แก้ไขลิงก์' : 'แทรกลิงก์'}</h3>
-      <label for="oict-addr">ที่อยู่</label>
-      <input id="oict-addr" type="text" autocomplete="off" placeholder="https://example.com" />
-      <label for="oict-text">ข้อความที่จะแสดง</label>
-      <input id="oict-text" type="text" autocomplete="off" />
-      <label class="oict-check-row" style="margin-top:12px"><input id="oict-chrome" type="checkbox" />เปิดด้วย Chrome</label>
-      <div class="oict-hint">ใส่ nasarut-inchrome-chrome: หน้าลิงก์ให้อัตโนมัติ</div>
-      <label class="oict-check-row" style="margin-top:8px"><input id="oict-newtab" type="checkbox" />เปิดในแท็บใหม่</label>
-      <div class="oict-err" role="alert" hidden></div>
-      <div class="oict-actions">
-        <button type="button" class="oict-primary" data-act="save">บันทึก</button>
-        <button type="button" data-act="cancel">ยกเลิก</button>
-        ${href ? '<button type="button" class="oict-danger" data-act="remove">เอาลิงก์ออก</button>' : ''}
+    const backdrop = doc.createElement('div');
+    backdrop.className = 'oict-ld-backdrop';
+    backdrop.innerHTML = `
+      <div class="oict-ld" role="dialog" aria-modal="true" aria-labelledby="oict-ld-title">
+        <div class="oict-ld-head"><h3 id="oict-ld-title">${href ? 'แก้ไขลิงก์' : 'แทรกลิงก์'}</h3>
+          <button type="button" class="oict-ld-x" data-act="cancel" aria-label="ปิด">✕</button></div>
+        <label for="oict-addr">ที่อยู่</label>
+        <input id="oict-addr" type="text" autocomplete="off" placeholder="https://" />
+        <label for="oict-text">ข้อความที่จะแสดง</label>
+        <input id="oict-text" type="text" autocomplete="off" />
+        ${search ? `
+        <label for="oict-search" class="oict-ld-gap">ค้นหา</label>
+        <input id="oict-search" type="search" autocomplete="off" placeholder="พิมพ์คำค้นเพื่อค้นหาหน้าในไซต์นี้" />
+        <div class="oict-ld-listhead" id="oict-ld-listhead">หน้าล่าสุดในไซต์นี้</div>
+        <div class="oict-ld-list"><table aria-labelledby="oict-ld-listhead"><thead><tr><th>ชื่อ</th><th>แก้ไขล่าสุด</th></tr></thead><tbody></tbody></table>
+          <div class="oict-ld-status" role="status"></div></div>` : ''}
+        <label class="oict-toggle oict-ld-gap"><input id="oict-chrome" type="checkbox" role="switch" /><span class="oict-switch" aria-hidden="true"></span>เปิดด้วย Chrome</label>
+        <div class="oict-ld-hint">ใส่ nasarut-inchrome-chrome: หน้าลิงก์ให้อัตโนมัติ</div>
+        <label class="oict-toggle"><input id="oict-newtab" type="checkbox" role="switch" /><span class="oict-switch" aria-hidden="true"></span>เปิดลิงก์ในแท็บใหม่</label>
+        <div class="oict-err" role="alert" hidden></div>
+        <div class="oict-ld-actions">
+          ${href ? '<button type="button" class="oict-ld-remove" data-act="remove">เอาลิงก์ออก</button>' : ''}
+          <button type="button" class="oict-primary" data-act="save" disabled>บันทึก</button>
+          <button type="button" data-act="cancel">ยกเลิก</button>
+        </div>
       </div>`;
+    doc.body.appendChild(backdrop);
 
-    const addr = panel.querySelector('#oict-addr') as HTMLInputElement;
-    const text = panel.querySelector('#oict-text') as HTMLInputElement;
-    const chrome = panel.querySelector('#oict-chrome') as HTMLInputElement;
-    const newTab = panel.querySelector('#oict-newtab') as HTMLInputElement;
-    const err = panel.querySelector('.oict-err') as HTMLDivElement;
+    const q = <T extends Element>(sel: string): T => backdrop.querySelector(sel) as T;
+    const addr = q<HTMLInputElement>('#oict-addr');
+    const text = q<HTMLInputElement>('#oict-text');
+    const chrome = q<HTMLInputElement>('#oict-chrome');
+    const newTab = q<HTMLInputElement>('#oict-newtab');
+    const err = q<HTMLDivElement>('.oict-err');
+    const saveBtn = q<HTMLButtonElement>('[data-act="save"]');
 
     addr.value = stripChrome(href);
     text.value = selectedText;
     chrome.checked = isChromeHref(href);
     newTab.checked = current.target === '_blank';
-    [addr, text].forEach(i => i.addEventListener('input', () => { err.hidden = true; }));
+    let autoText = '';
+    const syncSave = (): void => { saveBtn.disabled = !addr.value.trim(); };
+    syncSave();
+    addr.addEventListener('input', () => { err.hidden = true; syncSave(); });
+    text.addEventListener('input', () => { err.hidden = true; });
     chrome.addEventListener('change', () => { err.hidden = true; });
+
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    function close(restoreFocus: boolean): void {
+      self.closeDialog = undefined;
+      doc.removeEventListener('keydown', onKey, true);
+      backdrop.remove();
+      if (restoreFocus) { e.commands.focus(); }
+    }
+    function onKey(ev: KeyboardEvent): void {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(true); }
+    }
+    doc.addEventListener('keydown', onKey, true);
+    this.closeDialog = () => close(false);
 
     const save = (): void => {
       const result = buildHref(addr.value, chrome.checked);
@@ -1176,25 +1222,82 @@ export class RichTextEditor {
         addr.focus();
         return;
       }
+      close(false);
       this.applyLink(result.href, newTab.checked ? '_blank' : null, text.value, selectedText);
-      this.closePopover();
     };
 
-    panel.addEventListener('click', (ev: MouseEvent) => {
-      const act = (ev.target as HTMLElement).getAttribute('data-act');
+    backdrop.addEventListener('click', (ev: MouseEvent) => {
+      const act = (ev.target as HTMLElement).closest?.('[data-act]')?.getAttribute('data-act');
       if (act === 'save') { save(); }
-      if (act === 'cancel') { this.closePopover(); e.commands.focus(); }
+      if (act === 'cancel') { close(true); }
       if (act === 'remove' && this.linkRange) {
+        close(false);
         e.chain().focus().setTextSelection(this.linkRange).unsetLink().run();
-        this.closePopover();
       }
     });
-    panel.addEventListener('keydown', (ev: KeyboardEvent) => {
-      if (ev.key === 'Enter' && (ev.target as HTMLElement).tagName === 'INPUT') { ev.preventDefault(); save(); }
+    backdrop.addEventListener('mousedown', (ev: MouseEvent) => { if (ev.target === backdrop) { close(true); } });
+    backdrop.addEventListener('keydown', (ev: KeyboardEvent) => {
+      const t = ev.target as HTMLElement;
+      if (ev.key === 'Enter' && t.tagName === 'INPUT' && t.id !== 'oict-search' && (t as HTMLInputElement).type === 'text') {
+        ev.preventDefault();
+        if (!saveBtn.disabled) { save(); }
+      }
     });
 
-    this.openPopover(this.linkBtn, panel, 'oict-link');
+    if (search) {
+      const input = q<HTMLInputElement>('#oict-search');
+      const head = q<HTMLDivElement>('.oict-ld-listhead');
+      const body = q<HTMLTableSectionElement>('.oict-ld-list tbody');
+      const status = q<HTMLDivElement>('.oict-ld-status');
+      let seq = 0;
+      let timer: number | undefined;
+      const formatDate = (iso: string): string => {
+        const d = new Date(iso);
+        return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      };
+      const load = (term: string): void => {
+        const mine = ++seq;
+        head.textContent = term ? 'ผลการค้นหา' : 'หน้าล่าสุดในไซต์นี้';
+        status.textContent = 'กำลังโหลด…';
+        body.replaceChildren();
+        search(term).then((pages: ISitePage[]) => {
+          if (mine !== seq) { return; }
+          status.textContent = pages.length ? '' : (term ? 'ไม่พบหน้าที่ตรงกับคำค้น' : 'ยังไม่มีหน้าในไซต์นี้');
+          for (const page of pages) {
+            const tr = doc.createElement('tr');
+            tr.tabIndex = 0;
+            tr.innerHTML = `<td class="oict-ld-title"></td><td class="oict-ld-date"></td>`;
+            (tr.firstElementChild as HTMLElement).textContent = page.title;
+            (tr.lastElementChild as HTMLElement).textContent = formatDate(page.modified);
+            tr.title = page.url;
+            const pick = (): void => {
+              body.querySelectorAll('tr').forEach(r => r.classList.remove('is-selected'));
+              tr.classList.add('is-selected');
+              addr.value = page.url;
+              if (!text.value.trim() || text.value === autoText) {
+                text.value = page.title;
+                autoText = page.title;
+              }
+              err.hidden = true;
+              syncSave();
+            };
+            tr.addEventListener('click', pick);
+            tr.addEventListener('keydown', (ev: KeyboardEvent) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
+            body.appendChild(tr);
+          }
+        }).catch(() => {
+          if (mine === seq) { status.textContent = 'โหลดรายการหน้าไม่ได้ พิมพ์ที่อยู่ลิงก์เองได้'; }
+        });
+      };
+      input.addEventListener('input', () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => load(input.value.trim()), 300);
+      });
+      load('');
+    }
+
     addr.focus();
+    addr.select();
   }
 
   /** A click followed very quickly by Ctrl+K can reach us before the editor has read the new selection. */
