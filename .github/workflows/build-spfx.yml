@@ -71,7 +71,7 @@ jobs:
       - name: Upload .sppkg
         uses: actions/upload-artifact@v4
         with:
-          name: Nasarut-inchrome-sppkg
+          name: Nasarut-inchrome-legacy-sppkg
           path: build-project/**/sharepoint/solution/*.sppkg
           if-no-files-found: error
 
@@ -83,12 +83,12 @@ jobs:
           test -n "$PACKAGE"
           mkdir -p dist/legacy
           cp "$PACKAGE" dist/legacy/Nasarut-inchrome-link-v1.0.2.0.sppkg
-          git rm -f dist/OpenInChrome.sppkg || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f dist/legacy/Nasarut-inchrome-link-v1.0.2.0.sppkg
           if ! git diff --cached --quiet; then
             git commit -m "Store legacy Nasarut-inchrome link package"
+            git pull --rebase origin main
             git push origin HEAD:main
           else
             echo "Built package already saved in repository"
